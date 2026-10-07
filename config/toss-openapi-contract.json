@@ -1,0 +1,1255 @@
+{
+  "document_url": "https://openapi.tossinvest.com/openapi-docs/latest/openapi.json",
+  "document_version": "1.2.19",
+  "source_sha256": "7588debd863ac074e9e408185413ab573c3d45e9221e8cedaeec7c54ee295f03",
+  "origin": "https://openapi.tossinvest.com",
+  "responses": {
+    "/oauth2/token": {
+      "$ref": "#/components/schemas/OAuth2TokenResponse"
+    },
+    "/api/v1/prices": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/ApiResponse"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "result": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/PriceResponse"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "/api/v1/candles": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/ApiResponse"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "result": {
+              "$ref": "#/components/schemas/CandlePageResponse"
+            }
+          }
+        }
+      ]
+    },
+    "/api/v1/stocks": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/ApiResponse"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "result": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/StockInfo"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "/api/v1/rankings": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/ApiResponse"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "result": {
+              "$ref": "#/components/schemas/RankingResponse"
+            }
+          }
+        }
+      ]
+    },
+    "/api/v1/stocks/{symbol}/investor-trading": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/ApiResponse"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "result": {
+              "$ref": "#/components/schemas/StockInvestorTradingResponse"
+            }
+          }
+        }
+      ]
+    },
+    "/api/v1/stocks/{symbol}/program-trades": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/ApiResponse"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "result": {
+              "$ref": "#/components/schemas/ProgramTradesResponse"
+            }
+          }
+        }
+      ]
+    },
+    "/api/v1/market-calendar/KR": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/ApiResponse"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "result": {
+              "$ref": "#/components/schemas/KrMarketCalendarResponse"
+            }
+          }
+        }
+      ]
+    },
+    "/api/v1/market-calendar/US": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/ApiResponse"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "result": {
+              "$ref": "#/components/schemas/UsMarketCalendarResponse"
+            }
+          }
+        }
+      ]
+    },
+    "/api/v1/market-indicators/prices": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/ApiResponse"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "result": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/MarketIndicatorPriceResponse"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "/api/v1/market-indicators/{symbol}/candles": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/ApiResponse"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "result": {
+              "$ref": "#/components/schemas/MarketIndicatorCandlePageResponse"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApiResponse": {
+        "type": "object",
+        "required": [
+          "result"
+        ],
+        "properties": {
+          "result": {}
+        }
+      },
+      "CandlePageResponse": {
+        "type": "object",
+        "required": [
+          "candles"
+        ],
+        "properties": {
+          "candles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Candle"
+            }
+          },
+          "nextBefore": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "KrMarketCalendarResponse": {
+        "type": "object",
+        "required": [
+          "today",
+          "previousBusinessDay",
+          "nextBusinessDay"
+        ],
+        "properties": {
+          "today": {
+            "$ref": "#/components/schemas/KrMarketDay"
+          },
+          "previousBusinessDay": {
+            "$ref": "#/components/schemas/KrMarketDay"
+          },
+          "nextBusinessDay": {
+            "$ref": "#/components/schemas/KrMarketDay"
+          }
+        }
+      },
+      "MarketIndicatorCandlePageResponse": {
+        "type": "object",
+        "required": [
+          "candles"
+        ],
+        "properties": {
+          "candles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MarketIndicatorCandle"
+            }
+          },
+          "nextBefore": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "MarketIndicatorPriceResponse": {
+        "type": "object",
+        "required": [
+          "symbol",
+          "lastPrice"
+        ],
+        "properties": {
+          "symbol": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "lastPrice": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          }
+        }
+      },
+      "OAuth2TokenResponse": {
+        "type": "object",
+        "required": [
+          "access_token",
+          "token_type",
+          "expires_in"
+        ],
+        "properties": {
+          "access_token": {
+            "type": "string"
+          },
+          "token_type": {
+            "type": "string",
+            "enum": [
+              "Bearer"
+            ]
+          },
+          "expires_in": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "PriceResponse": {
+        "type": "object",
+        "required": [
+          "symbol",
+          "lastPrice",
+          "currency"
+        ],
+        "properties": {
+          "symbol": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "lastPrice": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          }
+        }
+      },
+      "ProgramTradesResponse": {
+        "type": "object",
+        "required": [
+          "records"
+        ],
+        "properties": {
+          "nextUntil": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "records": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProgramTradeRecord"
+            }
+          }
+        }
+      },
+      "RankingResponse": {
+        "type": "object",
+        "required": [
+          "rankings"
+        ],
+        "properties": {
+          "rankedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "rankings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RankingItem"
+            }
+          }
+        }
+      },
+      "StockInfo": {
+        "type": "object",
+        "required": [
+          "symbol",
+          "name",
+          "englishName",
+          "isinCode",
+          "market",
+          "securityType",
+          "isCommonShare",
+          "status",
+          "currency",
+          "sharesOutstanding"
+        ],
+        "properties": {
+          "symbol": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "englishName": {
+            "type": "string"
+          },
+          "isinCode": {
+            "type": "string"
+          },
+          "market": {
+            "type": "string",
+            "enum": [
+              "KOSPI",
+              "KOSDAQ",
+              "NYSE",
+              "NASDAQ",
+              "AMEX",
+              "KR_ETC",
+              "US_ETC"
+            ]
+          },
+          "securityType": {
+            "type": "string",
+            "enum": [
+              "STOCK",
+              "FOREIGN_STOCK",
+              "DEPOSITARY_RECEIPT",
+              "INFRASTRUCTURE_FUND",
+              "REIT",
+              "ETF",
+              "FOREIGN_ETF",
+              "ETN",
+              "STOCK_WARRANTS"
+            ]
+          },
+          "isCommonShare": {
+            "type": "boolean"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "SCHEDULED",
+              "ACTIVE",
+              "DELISTED"
+            ]
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "listDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "delistDate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "sharesOutstanding": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "leverageFactor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "koreanMarketDetail": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/KrMarketDetail"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "StockInvestorTradingResponse": {
+        "type": "object",
+        "required": [
+          "records"
+        ],
+        "properties": {
+          "nextUntil": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "records": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StockInvestorTradingRecord"
+            }
+          }
+        }
+      },
+      "UsMarketCalendarResponse": {
+        "type": "object",
+        "required": [
+          "today",
+          "previousBusinessDay",
+          "nextBusinessDay"
+        ],
+        "properties": {
+          "today": {
+            "$ref": "#/components/schemas/UsMarketDay"
+          },
+          "previousBusinessDay": {
+            "$ref": "#/components/schemas/UsMarketDay"
+          },
+          "nextBusinessDay": {
+            "$ref": "#/components/schemas/UsMarketDay"
+          }
+        }
+      },
+      "Candle": {
+        "type": "object",
+        "required": [
+          "timestamp",
+          "openPrice",
+          "highPrice",
+          "lowPrice",
+          "closePrice",
+          "volume",
+          "currency"
+        ],
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "openPrice": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "highPrice": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "lowPrice": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "closePrice": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "volume": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          }
+        }
+      },
+      "Currency": {
+        "type": "string",
+        "enum": [
+          "KRW",
+          "USD"
+        ]
+      },
+      "KrMarketDay": {
+        "type": "object",
+        "required": [
+          "date"
+        ],
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "integrated": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/IntegratedHour"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "KrMarketDetail": {
+        "type": "object",
+        "required": [
+          "liquidationTrading",
+          "nxtSupported",
+          "krxTradingSuspended"
+        ],
+        "properties": {
+          "liquidationTrading": {
+            "type": "boolean"
+          },
+          "nxtSupported": {
+            "type": "boolean"
+          },
+          "krxTradingSuspended": {
+            "type": "boolean"
+          },
+          "nxtTradingSuspended": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      },
+      "MarketIndicatorCandle": {
+        "type": "object",
+        "required": [
+          "timestamp",
+          "openPrice",
+          "highPrice",
+          "lowPrice",
+          "closePrice",
+          "volume"
+        ],
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "openPrice": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "highPrice": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "lowPrice": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "closePrice": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "volume": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          }
+        }
+      },
+      "ProgramTradeRecord": {
+        "type": "object",
+        "required": [
+          "date",
+          "arbitrage",
+          "nonArbitrage"
+        ],
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "arbitrage": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProgramTradingVolume"
+              }
+            ]
+          },
+          "nonArbitrage": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProgramTradingVolume"
+              }
+            ]
+          }
+        }
+      },
+      "RankingItem": {
+        "type": "object",
+        "required": [
+          "rank",
+          "symbol",
+          "currency",
+          "price",
+          "tradingVolume",
+          "tradingAmount"
+        ],
+        "properties": {
+          "rank": {
+            "type": "integer"
+          },
+          "symbol": {
+            "type": "string"
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          },
+          "price": {
+            "$ref": "#/components/schemas/RankingPrice"
+          },
+          "tradingVolume": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "tradingAmount": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          }
+        }
+      },
+      "StockInvestorTradingRecord": {
+        "type": "object",
+        "required": [
+          "date",
+          "updatedAt",
+          "foreigner",
+          "institution"
+        ],
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "individual": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/InvestorTradingVolume"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "foreigner": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/InvestorTradingVolume"
+              }
+            ]
+          },
+          "institution": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StockInstitutionTradingVolume"
+              }
+            ]
+          },
+          "otherCorporation": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/InvestorTradingVolume"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "foreignerHolding": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ForeignerHolding"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cfd": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/CfdBalance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "UsMarketDay": {
+        "type": "object",
+        "required": [
+          "date"
+        ],
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "dayMarket": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/UsDayMarketSession"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "preMarket": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/UsPreMarketSession"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "regularMarket": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/UsRegularMarketSession"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "afterMarket": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/UsAfterMarketSession"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "CfdBalance": {
+        "type": "object",
+        "required": [
+          "buyBalanceQuantity",
+          "buyBalanceRate",
+          "sellBalanceQuantity",
+          "sellBalanceRate"
+        ],
+        "properties": {
+          "buyBalanceQuantity": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "buyBalanceRate": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "sellBalanceQuantity": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "sellBalanceRate": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          }
+        }
+      },
+      "ForeignerHolding": {
+        "type": "object",
+        "required": [
+          "holdingQuantity",
+          "limitQuantity",
+          "holdingRate"
+        ],
+        "properties": {
+          "holdingQuantity": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "limitQuantity": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "holdingRate": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          }
+        }
+      },
+      "IntegratedHour": {
+        "type": "object",
+        "properties": {
+          "preMarket": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/PreMarketSession"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "regularMarket": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RegularMarketSession"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "afterMarket": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/AfterMarketSession"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "InvestorTradingVolume": {
+        "type": "object",
+        "required": [
+          "buyVolume",
+          "sellVolume",
+          "netBuyVolume"
+        ],
+        "properties": {
+          "buyVolume": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "sellVolume": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "netBuyVolume": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          }
+        }
+      },
+      "ProgramTradingVolume": {
+        "type": "object",
+        "required": [
+          "buyVolume",
+          "sellVolume",
+          "netBuyVolume"
+        ],
+        "properties": {
+          "buyVolume": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "sellVolume": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "netBuyVolume": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          }
+        }
+      },
+      "RankingPrice": {
+        "type": "object",
+        "required": [
+          "lastPrice",
+          "basePrice"
+        ],
+        "properties": {
+          "lastPrice": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "basePrice": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "changeRate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal",
+            "maxLength": 30
+          }
+        }
+      },
+      "StockInstitutionTradingVolume": {
+        "type": "object",
+        "required": [
+          "buyVolume",
+          "sellVolume",
+          "netBuyVolume"
+        ],
+        "properties": {
+          "buyVolume": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "sellVolume": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "netBuyVolume": {
+            "type": "string",
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "breakdown": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/StockInstitutionTradingBreakdown"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "UsAfterMarketSession": {
+        "type": "object",
+        "required": [
+          "startTime",
+          "endTime"
+        ],
+        "properties": {
+          "startTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endTime": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "UsDayMarketSession": {
+        "type": "object",
+        "required": [
+          "startTime",
+          "endTime"
+        ],
+        "properties": {
+          "startTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endTime": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "UsPreMarketSession": {
+        "type": "object",
+        "required": [
+          "startTime",
+          "endTime"
+        ],
+        "properties": {
+          "startTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endTime": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "UsRegularMarketSession": {
+        "type": "object",
+        "required": [
+          "startTime",
+          "endTime"
+        ],
+        "properties": {
+          "startTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endTime": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AfterMarketSession": {
+        "type": "object",
+        "required": [
+          "startTime",
+          "endTime"
+        ],
+        "properties": {
+          "startTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "singlePriceAuctionEndTime": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "endTime": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PreMarketSession": {
+        "type": "object",
+        "required": [
+          "startTime",
+          "endTime"
+        ],
+        "properties": {
+          "startTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "singlePriceAuctionStartTime": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "endTime": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "RegularMarketSession": {
+        "type": "object",
+        "required": [
+          "startTime",
+          "endTime"
+        ],
+        "properties": {
+          "startTime": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "singlePriceAuctionStartTime": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "endTime": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "StockInstitutionTradingBreakdown": {
+        "type": "object",
+        "required": [
+          "financialInvestment",
+          "insurance",
+          "trust",
+          "privateEquityFund",
+          "bank",
+          "otherFinancialInstitution",
+          "pensionFund"
+        ],
+        "properties": {
+          "financialInvestment": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/InvestorTradingVolume"
+              }
+            ]
+          },
+          "insurance": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/InvestorTradingVolume"
+              }
+            ]
+          },
+          "trust": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/InvestorTradingVolume"
+              }
+            ]
+          },
+          "privateEquityFund": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/InvestorTradingVolume"
+              }
+            ]
+          },
+          "bank": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/InvestorTradingVolume"
+              }
+            ]
+          },
+          "otherFinancialInstitution": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/InvestorTradingVolume"
+              }
+            ]
+          },
+          "pensionFund": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/InvestorTradingVolume"
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,21 @@
+themes:
+  - id: optical_networking
+    name: 광통신 / CPO
+    memberSymbols: ['010170', '138080', '056360']
+    usTickers: [MRVL, CIEN, COHR, LITE]
+  - id: ai_power_nuclear
+    name: AI 전력 / 원전
+    memberSymbols: ['034020', '052690', '051600']
+    usTickers: [CEG, VST, GEV, CCJ]
+  - id: ai_semiconductor
+    name: AI 반도체
+    memberSymbols: ['000660', '240810', '222800']
+    usTickers: [NVDA, AMD, AVGO, MU]
+  - id: battery
+    name: 2차전지
+    memberSymbols: ['373220', '006400', '247540']
+    usTickers: [ALB, TSLA, QS]
+  - id: energy_solar
+    name: 에너지 / 태양광
+    memberSymbols: ['322000', '009830', '096770']
+    usTickers: [FSLR, ENPH, XOM]

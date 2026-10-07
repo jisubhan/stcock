@@ -1,0 +1,45 @@
+screen:
+  min_traded_value_krw: 10000000000
+  candidate_limit: 100
+  min_recommend_score: 80
+significant_candle:
+  min_gain_pct: 4.0
+  min_volume_ratio_20d: 1.8
+  close_position_min: 0.65
+  lookback_days: 10
+  holding_volume_ratio: 0.65
+  holding_price_ratio: 0.99
+moving_average:
+  short: 5
+  medium: 20
+box:
+  lookback_days: 24
+  touch_tolerance_pct: 0.8
+  min_touches: 2
+entry:
+  ma5_distance_pct: 1.2
+  pivot_reclaim_confirm_pct: 0.15
+  confirmation_minutes: 3
+  volume_acceleration: 1.5
+  zone_width_pct: 0.5
+  support_tolerance_pct: 1.0
+risk:
+  max_stop_loss_pct: 2.0
+  min_risk_reward: 1.8
+  stop_buffer_pct: 0.2
+  target_r_multiple: 3.0
+theme:
+  min_constituents: 3
+  min_breadth_pct: 55
+  min_strength: 60
+weights:
+  theme_strength: 25
+  money_flow: 20
+  chart_structure: 25
+  support_confluence: 15
+  risk_reward: 10
+  realtime_confirmation: 5
+backtest:
+  forward_bars: 5
+  fee_pct: 0.015
+  slippage_pct: 0.05
