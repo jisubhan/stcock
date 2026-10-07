@@ -27,6 +27,12 @@ npm run start
 
 `API_PORT`, `PORT`, `API_ORIGIN`으로 포트를 조정할 수 있습니다. 로컬 환경 파일은 자동 생성하지 않습니다. 필요한 서버 환경변수는 `.env.example`를 참고하여 실행 프로세스에 주입하세요. Next 환경 파일에 서버 인증 정보를 넣거나 `NEXT_PUBLIC_`로 노출하지 마세요.
 
+## 공개 데모 배포
+
+[Railway](https://railway.com/new)에서 GitHub를 연결하고 `jisubhan/stcock` 저장소를 가져오면 웹과 API를 함께 실행하는 Docker 서비스를 만들 수 있습니다. Railway가 루트 `Dockerfile`을 자동으로 인식합니다. 기본값은 인증 키가 필요 없는 데모 모드이며, 정상 상태 확인 경로는 `/api/health`입니다. GitHub 연결과 서비스 설정·공개 도메인 생성 단계는 [배포 안내](docs/deployment.md)를 참고하세요.
+
+플랜과 사용량·요금 조건은 Railway 생성 화면에서 확인합니다. 데모의 서버 설정·가상 거래는 방문자끼리 공유되고 기본 파일 저장소는 재배포 시 초기화될 수 있습니다. 서비스가 생성된 뒤 Railway에서 공개 도메인을 생성해 접속합니다. GitHub 푸시나 Codex 환경 게시만으로 공개 URL이 생기지는 않습니다.
+
 ## 구현한 기능
 
 - 시장 지표 4개, 주도 테마 Top 5, 기본 A등급 이상 추천 Top 3, 테마·정렬 필터와 전체 후보 보기

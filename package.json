@@ -10,6 +10,7 @@
     "dev:web": "npm run dev --workspace @flowtrade/web",
     "build": "npm run build --workspace @flowtrade/web",
     "start": "npm run start --workspace @flowtrade/web",
+    "start:production": "node scripts/start-prod.mjs",
     "typecheck": "npm run typecheck --workspace @flowtrade/web",
     "test:api": "PYTHONPATH=apps/api .venv/bin/python -m pytest apps/api/tests -q",
     "test:e2e": "node scripts/smoke.mjs"
