@@ -77,7 +77,7 @@ class FastTurnoverCollector:
         # The ingestion owner alone closes its shared HTTP client.
 
     def _guard(self):
-        if self._closed:
+        if self._closed or getattr(self.owner, '_closing', False):
             return "Turnover collection is closed."
         if os.environ.get("TOSS_DATA_MODE", "auto").lower() == "demo":
             return "Explicit DEMO mode disables all turnover HTTP collection."
@@ -112,6 +112,37 @@ class FastTurnoverCollector:
         save_provider_health("TOSS_TURNOVER", self._health, clock)
         return self.status()
 
+    async def _prices(self, client, requested):
+        quotes = {}
+        for start in range(0, len(requested), 100):
+            batch = requested[start:start + 100]
+            values, conflicts = {}, set()
+            for quote in await client.prices(batch):
+                if not isinstance(quote, dict) or quote.get('symbol') not in batch:
+                    continue
+                symbol = quote['symbol']
+                if symbol in values and values[symbol] != quote:
+                    conflicts.add(symbol)
+                values[symbol] = quote
+            quotes.update({symbol: quote for symbol, quote in values.items() if symbol not in conflicts})
+        return quotes
+
+    async def _mirror_discovery(self, quotes, received, requested, calendar):
+        """Hot selected stocks also update the independent discovery warehouse.
+
+        This does not change either collector's universe or provider-health
+        scope. A warehouse fault cannot suppress a successful quote monitor.
+        """
+        try:
+            from app.discovery.storage import save_calendar, save_market_quotes
+            await asyncio.to_thread(save_calendar, 'KR', calendar, received)
+            await asyncio.to_thread(save_market_quotes, list(quotes.values()), received, expected_symbols=requested)
+            self._health['discovery_mirror_status'] = 'READY'
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            self._health['discovery_mirror_status'] = 'UNAVAILABLE'
+
     async def poll_once(self):
         if self._lock.locked():
             return self.status()
@@ -142,14 +173,16 @@ class FastTurnoverCollector:
                 registered = sorted({symbol for theme in read_themes() for symbol in theme["memberSymbols"]})
                 news_symbols = sorted({symbol for event in current_catalysts(as_of=received)
                                        for symbol in event.get("tickers", []) if isinstance(symbol, str)})
-                requested = list(dict.fromkeys(registered + news_symbols))[:200]
-                quotes = {}
-                for start in range(0, len(requested), 100):
-                    for quote in await client.prices(requested[start:start + 100]):
-                        if isinstance(quote, dict) and isinstance(quote.get('symbol'), str):
-                            quotes[quote['symbol']] = quote
+                from app.discovery.storage import current_hot_symbols
+                selected = await asyncio.to_thread(current_hot_symbols, 200, received)
+                # Reserve another 100 slots for the freshly observed ranking.
+                # Old manual chart requests cannot crowd out new market leaders.
+                watch_candidates = list(dict.fromkeys(registered[:30] + news_symbols[:30] + selected + registered[30:] + news_symbols[30:]))
+                requested = watch_candidates[:100]
+                quotes = await self._prices(client, requested)
                 received = aware(self.clock())
                 save_quotes(list(quotes.values()), received, requested, self.interval)
+                await self._mirror_discovery(quotes, received, requested, calendar)
                 self._quotes_next_allowed, self._quote_failures = 0., 0
                 # Ranking nulls, stale clocks, backoff and history insufficiency
                 # never suppress independently received actual watchlist prices.
@@ -172,23 +205,30 @@ class FastTurnoverCollector:
                 session = current_session(calendar, ranked_at)
                 if session is None:
                     return self._record("UNAVAILABLE", "No verified active market session matches the provider time.", received)
+                try:
+                    from app.discovery.storage import save_global_rankings
+                    await asyncio.to_thread(save_global_rankings, metadata, received, country='KR')
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    self._health['discovery_ranking_mirror_status'] = 'UNAVAILABLE'
                 rows = metadata.get("rankings")
                 if not isinstance(rows, list):
                     return self._record("UNAVAILABLE", "Official ranking rows are unavailable.", received)
                 ranking_symbols = list(dict.fromkeys(row["symbol"] for row in rows if isinstance(row, dict) and isinstance(row.get("symbol"), str)))[:100]
                 extras = [symbol for symbol in ranking_symbols if symbol not in requested][:max(0, 200 - len(requested))]
+                remaining = [symbol for symbol in watch_candidates if symbol not in requested and symbol not in extras]
+                extras += remaining[:max(0, 200 - len(requested) - len(extras))]
                 requested += extras
                 if not requested:
                     return self._record("UNAVAILABLE", "No observed ranking or registered symbols are available.", received)
-                for start in range(0, len(extras), 100):
-                    for quote in await client.prices(extras[start:start + 100]):
-                        if isinstance(quote, dict) and isinstance(quote.get("symbol"), str):
-                            quotes[quote["symbol"]] = quote
+                quotes.update(await self._prices(client, extras))
                 # Timestamp freshness is checked after the complete HTTP batch;
                 # a slow response never inherits its earlier request time.
                 received = aware(self.clock())
                 if extras:
                     save_quotes(list(quotes.values()), received, requested, self.interval)
+                    await self._mirror_discovery(quotes, received, requested, calendar)
                 age = (received - ranked_at).total_seconds()
                 if age < 0 or age > max_age:
                     return self._record("STALE", "Ranking became stale while quotes were fetched.", received, latency_seconds=max(0, age))

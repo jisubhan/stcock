@@ -80,7 +80,7 @@ class ThemeRelation(RadarModel):
     theme_id: str = Field(min_length=1)
     symbol: str = Field(min_length=1)
     weight: Annotated[float, Field(gt=0, le=1, allow_inf_nan=False)] = 1
-    relationship: Literal["DIRECT_VERIFIED", "NEWS_REPORTED", "THEMATIC_ASSOCIATION", "UNVERIFIED"] = "THEMATIC_ASSOCIATION"
+    relationship: Literal["DIRECT_VERIFIED", "NEWS_REPORTED", "THEMATIC_ASSOCIATION", "OFFICIAL_SECTOR_MEMBER", "UNVERIFIED"] = "THEMATIC_ASSOCIATION"
     effective_from: datetime
     first_seen_at: datetime
     source_url: str = Field(min_length=1)

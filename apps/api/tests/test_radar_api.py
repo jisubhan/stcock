@@ -182,16 +182,20 @@ def test_additive_migration_and_down_preserve_existing_paper_data():
     backup = path.with_name('before-down.sqlite3')
     with sqlite3.connect(path) as conn, sqlite3.connect(backup) as archive:
         conn.backup(archive)
+        conn.executescript((storage.SQL_PATH.parent / '003_discovery_down.sql').read_text())
         conn.executescript((storage.SQL_PATH.parent / '002_quote_monitor_down.sql').read_text())
         conn.executescript((storage.SQL_PATH.parent / '001_radar_v12_down.sql').read_text())
         assert conn.execute('SELECT id FROM notification_read').fetchone()[0] == 'legacy-user-read'
         assert conn.execute('SELECT COUNT(*) FROM backtest_runs').fetchone()[0] == 1
         assert not conn.execute("SELECT 1 FROM sqlite_master WHERE name='minute_symbol_metrics'").fetchone()
         assert not conn.execute("SELECT 1 FROM sqlite_master WHERE name='quote_observations'").fetchone()
+        assert not conn.execute("SELECT 1 FROM sqlite_master WHERE name='discovery_records'").fetchone()
     with sqlite3.connect(backup) as archive:
         assert archive.execute("SELECT 1 FROM sqlite_master WHERE name='minute_symbol_metrics'").fetchone()
         assert archive.execute("SELECT 1 FROM sqlite_master WHERE name='quote_observations'").fetchone()
+        assert archive.execute("SELECT 1 FROM sqlite_master WHERE name='discovery_records'").fetchone()
     with storage.connection() as conn:
         assert conn.execute("SELECT version FROM schema_migrations WHERE version='radar_v12_001'").fetchone()
         assert conn.execute("SELECT version FROM schema_migrations WHERE version='quote_monitor_002'").fetchone()
+        assert conn.execute("SELECT version FROM schema_migrations WHERE version='market_discovery_003'").fetchone()
         assert conn.execute('SELECT COUNT(*) FROM backtest_runs').fetchone()[0] == 1

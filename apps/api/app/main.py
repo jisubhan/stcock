@@ -15,6 +15,7 @@ from app.db.store import (mark_notifications, monitor_paper, paper_buy, paper_se
                           paper_snapshot, read_notifications, save_backtest)
 from app.market.ingestion import IngestionService, analysis_snapshot
 from app.radar.routes import router as radar_router
+from app.discovery.routes import router as discovery_router
 from app.radar.runtime import CatalystWorker
 
 
@@ -38,6 +39,7 @@ app.add_middleware(CORSMiddleware,
     allow_origins=os.environ.get('CORS_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(','),
     allow_credentials=False, allow_methods=['GET', 'POST', 'PUT', 'DELETE'], allow_headers=['Content-Type'])
 app.include_router(radar_router)
+app.include_router(discovery_router)
 
 
 def snapshot():

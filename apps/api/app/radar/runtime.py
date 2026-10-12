@@ -48,6 +48,13 @@ def current_catalysts(as_of=None, since=None, verified=None, last_trading_close=
 
 def configured_relations(as_of, events, *, historical=False):
     existing = read_relations(as_of)
+    # Use the graph available at this instant, including removal revisions.
+    # An official industry membership does not assert a news beneficiary.
+    from app.discovery.storage import discovery_snapshot
+    discovery = discovery_snapshot(as_of)
+    sector_names = {str(row['sectorId']): row.get('name') for row in discovery.get('sectors', [])}
+    official = discovery.get('memberships', [])
+    official_keys = {('sector:' + str(row['sector_id']), row['symbol'], row['source_url']) for row in official}
     if historical:
         # A historical query never imports today's configuration or writes an
         # invented past first_seen_at. Only contemporaneously recorded maps exist.
@@ -56,7 +63,9 @@ def configured_relations(as_of, events, *, historical=False):
         event_keys = {(theme_id, symbol, event['source_url']) for event in events if event.get('status') != 'RETRACTED'
                       for theme_id in event.get('theme_ids', []) for symbol in event.get('tickers', [])}
         return [item for item in existing if (item.provider == 'configured_theme_map' and (item.theme_id, item.symbol) in allowed)
-                or (item.provider != 'configured_theme_map' and (item.theme_id, item.symbol, item.source_url) in event_keys)]
+                or (item.provider == 'toss_official_sector' and (item.theme_id, item.symbol, item.source_url) in official_keys)
+                or (item.provider not in ('configured_theme_map', 'toss_official_sector')
+                    and (item.theme_id, item.symbol, item.source_url) in event_keys)]
     themes = read_themes()
     if read_state('theme_config') != themes:
         save_state('theme_config', themes, as_of)
@@ -66,6 +75,14 @@ def configured_relations(as_of, events, *, historical=False):
             desired.append(dict(theme_id=theme['id'], theme_name=theme['name'], symbol=symbol, weight=1.,
                 relationship='THEMATIC_ASSOCIATION', source_url='https://github.com/jisubhan/stcock/blob/main/config/themes.yml',
                 provider='configured_theme_map', effective_from=as_of, first_seen_at=as_of))
+    for row in official:
+        sector_id = str(row['sector_id'])
+        if sector_id not in sector_names:
+            continue
+        available = datetime.fromisoformat(row['first_seen_at'])
+        desired.append(dict(theme_id='sector:' + sector_id, theme_name=sector_names[sector_id], symbol=row['symbol'],
+            weight=1., relationship='OFFICIAL_SECTOR_MEMBER', source_url=row['source_url'],
+            provider='toss_official_sector', effective_from=available, first_seen_at=available))
     for event in events:
         if event.get('status') == 'RETRACTED':
             continue
@@ -84,9 +101,14 @@ def configured_relations(as_of, events, *, historical=False):
                     source_url=event['source_url'], provider=event['provider'],
                     effective_from=available, first_seen_at=available))
     selected, added = [], []
+    indexed = {}
+    for item in existing:
+        key = (item.theme_id, item.symbol, item.source_url)
+        old = indexed.get(key)
+        if old is None or (item.effective_from, item.first_seen_at) > (old.effective_from, old.first_seen_at):
+            indexed[key] = item
     for row in desired:
-        old = max((item for item in existing if item.theme_id == row['theme_id'] and item.symbol == row['symbol']
-                   and item.source_url == row['source_url']), key=lambda item: (item.effective_from, item.first_seen_at), default=None)
+        old = indexed.get((row['theme_id'], row['symbol'], row['source_url']))
         same = old and old.theme_name == row['theme_name'] and old.weight == row['weight'] and old.relationship == row['relationship']
         item = old if same else ThemeRelation(**row)
         selected.append(item)

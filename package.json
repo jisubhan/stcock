@@ -13,6 +13,7 @@
     "start:production": "node scripts/start-prod.mjs",
     "typecheck": "npm run typecheck --workspace @flowtrade/web",
     "test:api": "PYTHONPATH=apps/api .venv/bin/python -m pytest apps/api/tests -q",
-    "test:e2e": "node scripts/smoke.mjs"
+    "test:e2e": "node scripts/smoke.mjs",
+    "test:e2e:discovery": "node scripts/discovery-smoke.mjs"
   }
 }

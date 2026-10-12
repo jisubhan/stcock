@@ -8,6 +8,7 @@ import PriceChart from './PriceChart';
 import MiniSparkline from './MiniSparkline';
 import { WorkspaceViews } from './WorkspaceViews';
 import OpeningRadar from './OpeningRadar';
+import MarketDiscovery from './MarketDiscovery';
 import './provenance.css';
 
 const navigation: { view: View; label: string; icon: typeof Activity }[] = [
@@ -156,6 +157,7 @@ export default function RadarApp({ initialSymbol }: { initialSymbol?: string }) 
           <section className="page-heading"><div><div className="eyebrow">YOUR EDGE IN THE MARKET <span className="tiny-line"/></div><h1>시장의 흐름을, <span>기회로.</span></h1><p>오늘의 주도 테마와 수급을 따라, 좋은 종목을 좋은 가격에.</p></div><div className="heading-right"><span className="date-label"><CalendarDays size={15}/>{snapshotDate.date} <span>{snapshotDate.weekday}</span></span><button className="secondary-button refresh-button" onClick={()=>refresh(true)} disabled={refreshing}><RefreshCw size={14} className={refreshing?'spin':''}/>새로고침</button></div></section>
           <div className="demo-caption"><span className="status-dot"/> {isLive ? '토스증권 시세' : isDemo ? '체험 모드' : '연결 확인 중'} <span>·</span> {market?.sessionLabel || market?.session || '세션 확인 중'} <span>·</span> {snapshotTime} KST {isDemo ? '스냅샷' : '기준'} <span>·</span> {isDemo ? '실제 시세 아님' : venueLabel} <button onClick={()=>navigate('settings')}>데이터 연결 안내 <ArrowRight size={12}/></button></div>
           <OpeningRadar />
+          <MarketDiscovery />
           {error && <div className="error-banner" role="alert">데이터를 불러오지 못했습니다. API 서버 상태를 확인해주세요. <span>{error}</span><button onClick={()=>refresh(true)}>다시 시도</button></div>}
           {loading ? <div className="loading-grid">{[1,2,3,4].map(n=><div className="skeleton metric-card" key={n}/>)}</div> : <>
             <section className="market-grid" aria-label="시장 지표">{!market?.indices.length && <div className="metric-card market-data-empty"><Activity size={23}/><div><h3>지수 데이터를 아직 수신하지 못했어요</h3><p>현재 연결에서 제공되지 않은 지표는 표시하지 않습니다.</p></div></div>}{market?.indices.slice(0,4).map((index,i)=><div className="metric-card" key={index.name}><div className="metric-heading"><span className="metric-icon">{{KOSPI:'KR',KOSDAQ:'KQ',NASDAQ:'US','USD/KRW':'FX'}[index.name] || 'IDX'}</span><span>{index.name}</span><span className="metric-market">{index.name === 'USD/KRW' ? '환율' : ['KOSPI','KOSDAQ'].includes(index.name) ? '국내' : index.name === 'NASDAQ' ? '미국' : '지표'}</span></div><div className="metric-body"><div><strong>{index.value.toLocaleString('ko-KR',{minimumFractionDigits:2,maximumFractionDigits:2})}</strong><span className={index.changePct == null ? 'muted' : index.changePct>=0?'positive':'negative'}>{index.changePct != null && (index.changePct>=0?<ArrowUpRight size={13}/>:<ArrowDownLeft size={13}/>)} {index.changePct == null ? '데이터 없음' : pct(index.changePct)} <small>전일 대비</small></span></div><MiniSparkline values={index.sparkline} color={index.changePct != null && index.changePct>=0?'#e97179':'#3e93a3'} height={45} width={104}/></div></div>)}</section>

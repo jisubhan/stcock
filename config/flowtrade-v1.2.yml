@@ -16,6 +16,12 @@ flowtrade_v1_2:
     theme_snapshots_seconds: 60
     news_poll_seconds: 90
     top3_seconds: 60
+  discovery:
+    # Shared Toss client; round-robin prices do not imply every quote is live.
+    scan_batch_seconds: 2
+    quote_batch_size: 100
+    membership_max_depth: 2
+    analysis_per_cycle: 2
   scoring:
     live_theme:
       turnover_velocity: 0.25

@@ -24,7 +24,7 @@ export type ChartCandle = {
   low: number;
   close: number;
   volume: number;
-  ma5?: number;
+  ma5?: number | null;
   ma5_5m?: number | null;
   status?: 'CLOSED' | 'PARTIAL';
 };
@@ -43,7 +43,7 @@ export type ChartLevels = {
 
 type PriceChartProps = {
   candles: ChartCandle[];
-  levels: ChartLevels;
+  levels?: Partial<ChartLevels>;
   symbol: string;
   interval: "1d" | "5m" | "1m";
   height?: number;
@@ -54,6 +54,8 @@ type PriceChartProps = {
 
 type HoverData = ChartCandle & { label: string };
 const formatNumber = (value: number) => new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 0 }).format(value);
+const EMPTY_LEVELS: Partial<ChartLevels> = {};
+const validLevel = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value > 0;
 
 function utcTime(value: string): UTCTimestamp | null {
   if (/^\d+(?:\.\d+)?$/.test(value)) {
@@ -67,7 +69,7 @@ function utcTime(value: string): UTCTimestamp | null {
   return Number.isFinite(parsed) ? Math.floor(parsed / 1000) as UTCTimestamp : null;
 }
 
-export default function PriceChart({ candles, levels, symbol, interval, height = 300, showVolume = true, maPeriod = 5, significantCandleDate }: PriceChartProps) {
+export default function PriceChart({ candles, levels = EMPTY_LEVELS, symbol, interval, height = 300, showVolume = true, maPeriod = 5, significantCandleDate }: PriceChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const [hover, setHover] = useState<HoverData | null>(null);
@@ -126,6 +128,7 @@ export default function PriceChart({ candles, levels, symbol, interval, height =
     chartRef.current = chart;
 
     // A constant baseline series creates a true price-aligned entry-zone fill.
+    if (validLevel(levels.entryLow) && validLevel(levels.entryHigh)) {
     const entryBand = chart.addSeries(BaselineSeries, {
       baseValue: { type: "price", price: levels.entryLow },
       topFillColor1: "rgba(139, 92, 246, 0.075)",
@@ -141,6 +144,7 @@ export default function PriceChart({ candles, levels, symbol, interval, height =
       autoscaleInfoProvider: () => null,
     });
     entryBand.setData(data.map(({ time }) => ({ time, value: levels.entryHigh })));
+    }
 
     const price = chart.addSeries(CandlestickSeries, {
       upColor: "#ed5b63",
@@ -156,8 +160,8 @@ export default function PriceChart({ candles, levels, symbol, interval, height =
         return {
           ...info,
           priceRange: {
-            minValue: Math.min(info.priceRange.minValue, levels.stop, levels.entryLow) * 0.998,
-            maxValue: Math.max(info.priceRange.maxValue, levels.target2, levels.entryHigh) * 1.002,
+            minValue: Math.min(info.priceRange.minValue, ...[levels.stop, levels.entryLow].filter(validLevel)) * 0.998,
+            maxValue: Math.max(info.priceRange.maxValue, ...[levels.target2, levels.entryHigh].filter(validLevel)) * 1.002,
           },
         };
       },
@@ -182,13 +186,14 @@ export default function PriceChart({ candles, levels, symbol, interval, height =
         // keeps partial/gapped windows from becoming a fabricated recovery line.
         return [{ time: candle.time, ...(candle.status === 'CLOSED' && typeof candle.ma5_5m === 'number' && Number.isFinite(candle.ma5_5m) ? { value: candle.ma5_5m } : {}) }];
       }
-      if (interval === '1m') return [{ time: candle.time, value: levels.ma5 }];
+      if (interval === '1m') return [{ time: candle.time, ...(validLevel(levels.ma5) ? { value: levels.ma5 } : {}) }];
+      if (candle.status === 'PARTIAL') return [{ time: candle.time }];
       if (index < maPeriod - 1) return [];
       const window = data.slice(Math.max(0, index - maPeriod + 1), index + 1);
       const value = candle.ma5 ?? window.reduce((sum, item) => sum + item.close, 0) / window.length;
       return [{ time: candle.time, value }];
     }));
-    if (interval === '5m' && Number.isFinite(levels.ma5)) {
+    if (interval === '5m' && validLevel(levels.ma5)) {
       price.createPriceLine({ price: levels.ma5, title: 'MA5_DAILY', color: '#baa8d4',
         lineStyle: LineStyle.Dotted, lineWidth: 1, axisLabelVisible: false });
     }
@@ -219,7 +224,7 @@ export default function PriceChart({ candles, levels, symbol, interval, height =
       { price: levels.boxLow, title: "박스 하단", color: "#c5b899", lineStyle: LineStyle.Dotted },
     ];
     for (const line of lines) {
-      if (Number.isFinite(line.price)) price.createPriceLine({ ...line, lineWidth: 1, axisLabelVisible: false, lineVisible: true });
+      if (validLevel(line.price)) price.createPriceLine({ ...line, price: line.price, lineWidth: 1, axisLabelVisible: false, lineVisible: true });
     }
 
     chart.subscribeCrosshairMove((event) => {
@@ -269,8 +274,8 @@ export default function PriceChart({ candles, levels, symbol, interval, height =
       <div ref={containerRef} style={{ width: "100%", height }} data-testid="price-chart" />
       <div style={{ position: "absolute", left: 10, right: 70, top: 8, pointerEvents: "none", zIndex: 2, display: "flex", flexWrap: "wrap", alignItems: "center", gap: "5px 12px", fontSize: 10, color: "#948b9e" }}>
         <span style={{ display: "flex", alignItems: "center", gap: 5 }}><i style={{ width: 10, height: 2, background: "#9b78e3" }} />{interval === '5m' ? `MA5_5M${candles.some(c => c.status === 'CLOSED' && typeof c.ma5_5m === 'number' && Number.isFinite(c.ma5_5m)) ? '' : ' · 이력 대기'}` : `MA${maPeriod}${interval === '1m' ? '_DAILY' : ''}`}</span>
-        {interval === '5m' && <span style={{ display: "flex", alignItems: "center", gap: 5 }}><i style={{ width: 10, height: 1, background: "#baa8d4" }} />MA5_DAILY</span>}
-        <span style={{ display: "flex", alignItems: "center", gap: 5 }}><i style={{ width: 7, height: 7, background: "#eee6fb", borderRadius: 2 }} />진입 구간</span>
+        {interval === '5m' && validLevel(levels.ma5) && <span style={{ display: "flex", alignItems: "center", gap: 5 }}><i style={{ width: 10, height: 1, background: "#baa8d4" }} />MA5_DAILY</span>}
+        {validLevel(levels.entryLow) && validLevel(levels.entryHigh) && <span style={{ display: "flex", alignItems: "center", gap: 5 }}><i style={{ width: 7, height: 7, background: "#eee6fb", borderRadius: 2 }} />진입 구간</span>}
         {showVolume && <span style={{ display: "flex", alignItems: "center", gap: 5 }}><i style={{ width: 7, height: 7, background: "#f1d5d8", borderRadius: 2 }} />거래량</span>}
       </div>
       {hover && (

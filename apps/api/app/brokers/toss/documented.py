@@ -30,19 +30,33 @@ VERIFIED_DOCUMENT_VERSIONS = frozenset({"1.2.19", "1.2.24"})
 CONTRACT_PATH = Path(__file__).resolve().parents[5] / "config" / "toss-openapi-contract.json"
 FAQ_URL = "https://openapi.tossinvest.com/openapi-docs/faq.md"
 _SYMBOL = re.compile(r"^[A-Za-z0-9.\-]+$")
+_SECTOR_ID = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
+_STOCK_MARKETS = frozenset({"KOSPI", "KOSDAQ", "NYSE", "NASDAQ", "AMEX", "KR_ETC", "US_ETC"})
+_STOCK_STATUSES = frozenset({"SCHEDULED", "ACTIVE", "DELISTED"})
+_SECURITY_TYPES = frozenset({
+    "STOCK", "FOREIGN_STOCK", "DEPOSITARY_RECEIPT", "INFRASTRUCTURE_FUND", "REIT",
+    "ETF", "FOREIGN_ETF", "ETN", "STOCK_WARRANTS",
+})
+_RANKING_TYPES = frozenset({
+    "MARKET_TRADING_AMOUNT", "MARKET_TRADING_VOLUME", "TOP_GAINERS", "TOP_LOSERS",
+    "TOSS_SECURITIES_TRADING_AMOUNT", "TOSS_SECURITIES_TRADING_VOLUME",
+})
+_SECTOR_RANKING_TYPES = frozenset({"MARKET_TRADING_AMOUNT", "TOP_GAINERS"})
+_PERIODS = frozenset({"1d", "1w", "1mo", "3mo", "6mo", "1y"})
 _SAFE_CODES = frozenset({
     "invalid_request", "invalid_client", "invalid_grant", "unauthorized_client",
     "unsupported_grant_type", "access_denied", "server_error", "temporarily_unavailable",
     "token-revoked", "token-expired", "stock-not-found", "rate-limit-exceeded",
 })
 _READ_PATHS = frozenset({
-    "/api/v1/prices", "/api/v1/candles", "/api/v1/stocks", "/api/v1/rankings",
+    "/api/v1/prices", "/api/v1/candles", "/api/v1/stocks", "/api/v1/stocks/all", "/api/v1/rankings",
     "/api/v1/market-calendar/KR", "/api/v1/market-calendar/US",
-    "/api/v1/market-indicators/prices",
+    "/api/v1/market-indicators/prices", "/api/v1/sectors", "/api/v1/sectors/rankings",
 })
 _DYNAMIC_READ_PATH = re.compile(
     r"^/api/v1/(?:stocks/[A-Za-z0-9.\-]+/(?:investor-trading|program-trades)"
-    r"|market-indicators/(?:KOSPI|KOSDAQ)/candles)$")
+    r"|market-indicators/(?:KOSPI|KOSDAQ)/candles"
+    r"|sectors/[A-Za-z0-9_-]{1,40}(?:/stocks)?)$")
 
 
 class TossAPIError(BrokerUnavailable):
@@ -316,7 +330,7 @@ class OfficialTossClient:
 
     @staticmethod
     def _symbols(symbols: Sequence[str]) -> str:
-        if isinstance(symbols, str) or not symbols or len(symbols) > 100 or any(
+        if isinstance(symbols, str) or not symbols or len(symbols) > 200 or any(
                 not isinstance(s, str) or _SYMBOL.fullmatch(s) is None for s in symbols):
             raise TossAPIError("invalid_symbols")
         return ",".join(symbols)
@@ -332,6 +346,18 @@ class OfficialTossClient:
         if market not in ("KR", "US"):
             raise TossAPIError("invalid_market")
         return market
+
+    @staticmethod
+    def _enum(value: str, choices: frozenset[str], condition: str) -> str:
+        if not isinstance(value, str) or value not in choices:
+            raise TossAPIError(condition)
+        return value
+
+    @staticmethod
+    def _sector_id(sector_id: str) -> str:
+        if not isinstance(sector_id, str) or _SECTOR_ID.fullmatch(sector_id) is None:
+            raise TossAPIError("invalid_sector_id")
+        return sector_id
 
     @staticmethod
     def _before(before: str | None) -> dict[str, str]:
@@ -358,14 +384,67 @@ class OfficialTossClient:
     async def stock_master(self, symbols: Sequence[str]) -> list[dict[str, Any]]:
         return await self._get("/api/v1/stocks", {"symbols": self._symbols(symbols)})
 
-    async def rankings(self, market: str = "KR", count: int = 100) -> list[dict[str, Any]]:
-        result = await self.rankings_snapshot(market, count)
+    async def stock_universe(self, market: str, *, status: str = "ACTIVE",
+                             security_type: str | None = None, common_share: bool | None = None) -> list[dict[str, Any]]:
+        """One market's Toss-tradable catalog, not an exchange-completeness claim.
+
+        Official daily-batch data has no provider as-of or pagination. Callers
+        preserve retrieval time and requested filters separately from the rows.
+        """
+        params: dict[str, Any] = {
+            "market": self._enum(market, _STOCK_MARKETS, "invalid_stock_market"),
+            "status": self._enum(status, _STOCK_STATUSES, "invalid_stock_status"),
+        }
+        if security_type is not None:
+            params["securityType"] = self._enum(security_type, _SECURITY_TYPES, "invalid_security_type")
+        if common_share is not None:
+            if not isinstance(common_share, bool):
+                raise TossAPIError("invalid_common_share")
+            params["commonShare"] = "true" if common_share else "false"
+        return await self._get("/api/v1/stocks/all", params)
+
+    async def sectors(self) -> list[dict[str, Any]]:
+        """Toss's own industrial hierarchy; membership is not beneficiary proof."""
+        result = await self._get("/api/v1/sectors", {})
+        return result["sectors"]
+
+    async def sector_detail(self, sector_id: str, country: str = "KR") -> dict[str, Any]:
+        """Global sector metadata with market-specific six-period performance."""
+        sector_id = self._sector_id(sector_id)
+        return await self._get(f"/api/v1/sectors/{sector_id}", {"marketCountry": self._market(country)},
+                               "/api/v1/sectors/{sectorId}")
+
+    async def sector_stocks(self, sector_id: str, country: str = "KR") -> list[dict[str, Any]]:
+        """Common shares including child sectors; nullable totals have no as-of."""
+        sector_id = self._sector_id(sector_id)
+        result = await self._get(f"/api/v1/sectors/{sector_id}/stocks", {"marketCountry": self._market(country)},
+                                 "/api/v1/sectors/{sectorId}/stocks")
+        return result["stocks"]
+
+    async def sector_rankings(self, country: str = "KR", ranking_type: str = "MARKET_TRADING_AMOUNT",
+                              duration: str = "1d") -> list[dict[str, Any]]:
+        """Depth 0/1 provider rankings, without an invented rankedAt timestamp."""
+        result = await self._get("/api/v1/sectors/rankings", {
+            "marketCountry": self._market(country),
+            "type": self._enum(ranking_type, _SECTOR_RANKING_TYPES, "invalid_ranking_type"),
+            "duration": self._enum(duration, _PERIODS, "invalid_ranking_duration"),
+        })
         return result["rankings"]
 
-    async def rankings_snapshot(self, market: str = "KR", count: int = 100) -> dict[str, Any]:
+    async def rankings(self, market: str = "KR", count: int = 100, *,
+                       ranking_type: str = "MARKET_TRADING_AMOUNT", duration: str = "1d") -> list[dict[str, Any]]:
+        result = await self.rankings_snapshot(market, count, ranking_type=ranking_type, duration=duration)
+        return result["rankings"]
+
+    async def rankings_snapshot(self, market: str = "KR", count: int = 100, *,
+                                ranking_type: str = "MARKET_TRADING_AMOUNT", duration: str = "1d") -> dict[str, Any]:
         """Return validated rows plus the provider's nullable rankedAt time."""
-        result = await self._get("/api/v1/rankings", {"type": "MARKET_TRADING_AMOUNT",
-                                "marketCountry": self._market(market), "duration": "1d",
+        ranking_type = self._enum(ranking_type, _RANKING_TYPES, "invalid_ranking_type")
+        duration = self._enum(duration, _PERIODS | {"realtime"}, "invalid_ranking_duration")
+        if ranking_type in ("TOP_GAINERS", "TOP_LOSERS") and duration == "realtime":
+            raise TossAPIError("invalid_ranking_duration")
+        result = await self._get("/api/v1/rankings", {"type": ranking_type,
+                                "marketCountry": self._market(market), "duration": duration,
                                 "count": self._count(count, 100)})
         # Preserve the official as-of time for exact interval-turnover analysis.
         # A receipt timestamp must never replace nullable rankedAt.
@@ -423,6 +502,11 @@ class OfficialTossClient:
     get_prices = prices
     get_candles = candles
     get_stock_master = stock_master
+    get_stock_universe = stock_universe
+    get_sectors = sectors
+    get_sector_detail = sector_detail
+    get_sector_stocks = sector_stocks
+    get_sector_rankings = sector_rankings
     get_rankings = rankings
     get_investor_trading = investor
     get_program_trades = program

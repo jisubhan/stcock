@@ -165,6 +165,84 @@
           }
         }
       ]
+    },
+    "/api/v1/stocks/all": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/ApiResponse"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "result": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/ListedStock"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "/api/v1/sectors": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/ApiResponse"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "result": {
+              "$ref": "#/components/schemas/SectorsResponse"
+            }
+          }
+        }
+      ]
+    },
+    "/api/v1/sectors/{sectorId}": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/ApiResponse"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "result": {
+              "$ref": "#/components/schemas/SectorDetailResponse"
+            }
+          }
+        }
+      ]
+    },
+    "/api/v1/sectors/{sectorId}/stocks": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/ApiResponse"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "result": {
+              "$ref": "#/components/schemas/SectorStocksResponse"
+            }
+          }
+        }
+      ]
+    },
+    "/api/v1/sectors/rankings": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/ApiResponse"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "result": {
+              "$ref": "#/components/schemas/SectorRankingResponse"
+            }
+          }
+        }
+      ]
     }
   },
   "components": {
@@ -1247,6 +1325,287 @@
                 "$ref": "#/components/schemas/InvestorTradingVolume"
               }
             ]
+          }
+        }
+      },
+      "ListedStock": {
+        "type": "object",
+        "required": [
+          "symbol",
+          "name",
+          "securityType",
+          "isCommonShare",
+          "isinCode"
+        ],
+        "properties": {
+          "symbol": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "securityType": {
+            "type": "string",
+            "enum": [
+              "STOCK",
+              "FOREIGN_STOCK",
+              "DEPOSITARY_RECEIPT",
+              "INFRASTRUCTURE_FUND",
+              "REIT",
+              "ETF",
+              "FOREIGN_ETF",
+              "ETN",
+              "STOCK_WARRANTS"
+            ]
+          },
+          "isCommonShare": {
+            "type": "boolean"
+          },
+          "isinCode": {
+            "type": "string"
+          }
+        }
+      },
+      "SectorsResponse": {
+        "type": "object",
+        "required": [
+          "sectors"
+        ],
+        "properties": {
+          "sectors": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Sector"
+            }
+          }
+        }
+      },
+      "Sector": {
+        "type": "object",
+        "required": [
+          "sectorId",
+          "name",
+          "depth",
+          "parentSectorId"
+        ],
+        "properties": {
+          "sectorId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "depth": {
+            "type": "integer"
+          },
+          "parentSectorId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "SectorDetailResponse": {
+        "type": "object",
+        "required": [
+          "sectorId",
+          "name",
+          "depth",
+          "parentSectorId",
+          "summary",
+          "performance"
+        ],
+        "properties": {
+          "sectorId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "depth": {
+            "type": "integer"
+          },
+          "parentSectorId": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "summary": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "performance": {
+            "$ref": "#/components/schemas/SectorPerformance"
+          }
+        }
+      },
+      "SectorPerformance": {
+        "type": "object",
+        "required": [
+          "changeRates"
+        ],
+        "properties": {
+          "changeRates": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SectorChangeRate"
+            }
+          }
+        }
+      },
+      "SectorChangeRate": {
+        "type": "object",
+        "required": [
+          "duration",
+          "changeRate"
+        ],
+        "properties": {
+          "duration": {
+            "type": "string",
+            "enum": [
+              "1d",
+              "1w",
+              "1mo",
+              "3mo",
+              "6mo",
+              "1y"
+            ]
+          },
+          "changeRate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal",
+            "maxLength": 30
+          }
+        }
+      },
+      "SectorStocksResponse": {
+        "type": "object",
+        "required": [
+          "stocks"
+        ],
+        "properties": {
+          "stocks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SectorStock"
+            }
+          }
+        }
+      },
+      "SectorStock": {
+        "type": "object",
+        "required": [
+          "symbol",
+          "name",
+          "volume",
+          "tradingAmount",
+          "marketCapitalization",
+          "currency"
+        ],
+        "properties": {
+          "symbol": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "volume": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "tradingAmount": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "marketCapitalization": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
+          }
+        }
+      },
+      "SectorRankingResponse": {
+        "type": "object",
+        "required": [
+          "rankings"
+        ],
+        "properties": {
+          "rankings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SectorRankingItem"
+            }
+          }
+        }
+      },
+      "SectorRankingItem": {
+        "type": "object",
+        "required": [
+          "rank",
+          "sectorId",
+          "name",
+          "changeRate",
+          "tradingAmount",
+          "marketCapitalization",
+          "currency"
+        ],
+        "properties": {
+          "rank": {
+            "type": "integer"
+          },
+          "sectorId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "changeRate": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "tradingAmount": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "marketCapitalization": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "decimal",
+            "maxLength": 30
+          },
+          "currency": {
+            "$ref": "#/components/schemas/Currency"
           }
         }
       }

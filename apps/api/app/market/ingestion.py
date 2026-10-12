@@ -126,6 +126,9 @@ class IngestionService:
         self._lock = asyncio.Lock()
         self._task: asyncio.Task | None = None
         self._fast_collector = None
+        self._market_scanner = None
+        self._verification_in_progress = False
+        self._closing = False
         self._cache: dict[str, tuple[float, Any]] = {}
         self._blocked = False
         self._last_error: str | None = None
@@ -175,6 +178,7 @@ class IngestionService:
                 'condition': condition, 'callerIp': None, 'automaticRetryBlocked': self._blocked or condition == 'ip_not_allowed'}
 
     async def start(self):
+        self._closing = False
         report = safe_json('toss-probe.json')
         self._blocked = report.get('authentication', {}).get('condition') in ('ip_not_allowed', 'invalid_client', 'access_denied', 'authentication_rejected')
         if os.environ.get('TOSS_DATA_MODE', 'auto').lower() == 'demo':
@@ -183,12 +187,23 @@ class IngestionService:
         if credentials_present and not self._blocked:
             self._task = asyncio.create_task(self._run())
             await self._start_fast_collector()
+            await self._start_market_scanner()
 
     async def _start_fast_collector(self):
+        if self._closing:
+            return
         from app.radar.fast_collector import FastTurnoverCollector
         if self._fast_collector is None:
             self._fast_collector = FastTurnoverCollector(self)
         await self._fast_collector.start()
+
+    async def _start_market_scanner(self):
+        if self._closing:
+            return
+        from app.discovery.collector import WholeMarketScanner
+        if self._market_scanner is None:
+            self._market_scanner = WholeMarketScanner(self)
+        await self._market_scanner.start()
 
     def latch_auth_failure(self, error):
         """Persist only enumerated refusal fields so restarts cannot retry it."""
@@ -217,8 +232,11 @@ class IngestionService:
             await asyncio.sleep(30)
 
     async def close(self):
+        self._closing = True
         if self._fast_collector is not None:
             await self._fast_collector.close()
+        if self._market_scanner is not None:
+            await self._market_scanner.close()
         if self._task:
             self._task.cancel()
             try:
@@ -257,15 +275,21 @@ class IngestionService:
                 if explicit or not previous.get('venue', {}).get('verified'):
                     # Discovery temporarily changes the shared client's bounded
                     # request budget. Stop the fast reader while it is in use.
-                    if self._fast_collector is not None:
-                        await self._fast_collector.close()
+                    self._verification_in_progress = True
                     try:
+                        if self._fast_collector is not None:
+                            await self._fast_collector.close()
+                        if self._market_scanner is not None:
+                            await self._market_scanner.close()
                         report = await run_probe(self.client)
                         save_probe(report)
                         previous = report.to_dict()
                     finally:
-                        if self._fast_collector is not None:
+                        self._verification_in_progress = False
+                        if not self._closing and self._fast_collector is not None:
                             await self._fast_collector.start()
+                        if not self._closing and self._market_scanner is not None:
+                            await self._market_scanner.start()
                 auth = previous.get('authentication', {})
                 if auth.get('status') not in ('success', 'ready', 'passed'):
                     self._blocked = auth.get('condition') in ('ip_not_allowed', 'invalid_client', 'access_denied', 'authentication_rejected')
@@ -286,6 +310,7 @@ class IngestionService:
             if explicit and not self._blocked and (not self._task or self._task.done()):
                 self._task = asyncio.create_task(self._run(initial_delay=30))
                 await self._start_fast_collector()
+                await self._start_market_scanner()
             return self.status()
 
     async def ingest(self, venue: dict):

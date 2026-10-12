@@ -263,7 +263,9 @@ def test_watch_universe_and_quote_batches_stay_bounded(harness, monkeypatch):
     assert ("rankings_snapshot", "KR", 100) in harness.client.calls
     assert len(requested) == len(set(requested)) == 200
     assert all(len(batch) <= 100 for batch in batches)
-    assert requested[:100] == registered[:100]
+    assert requested[:30] == registered[:30]
+    assert set(ranked_symbols) <= set(requested)
+    assert set(news_symbols[:30]) <= set(requested)
     assert health["coverage"]["quotes_requested"] == 200
     assert "not the entire market" in health["coverage"]["scope"]
 
@@ -392,7 +394,9 @@ def test_start_is_idempotent_and_close_keeps_shared_client_owned_by_ingestion(ha
     run(scenario())
     assert harness.owner.client is harness.client
     assert not harness.client.closed
-    assert harness.client.calls.count(("rankings_snapshot", "KR", 100)) == 1
+    # Cancellation may happen while the independent discovery cache is read;
+    # idempotent start must still create at most one collection cycle.
+    assert harness.client.calls.count(("rankings_snapshot", "KR", 100)) <= 1
 
 
 def test_start_can_wait_for_verification_and_close_without_http(harness):
@@ -404,6 +408,35 @@ def test_start_can_wait_for_verification_and_close_without_http(harness):
         assert harness.collector._task is None
     run(scenario())
     assert harness.client.calls == []
+
+
+def test_selected_discovered_stock_is_hot_and_mirrored_even_when_rankings_are_stale(harness):
+    from app.discovery.storage import save_catalog, enqueue_analysis, discovery_snapshot
+    selected = '0101N0'
+    save_catalog([{'symbol': selected, 'name': 'Constructed selected stock', 'securityType': 'STOCK',
+                   'isCommonShare': True}], BASE, market='KOSDAQ')
+    enqueue_analysis(selected, priority=100, as_of=BASE)
+    harness.client.rank_age_seconds = 60
+    result = run(harness.collector.poll_once())
+    assert result['status'] == 'STALE'
+    assert any(selected in call[1] for call in harness.client.calls if call[0] == 'prices')
+    actual = next(row for row in discovery_snapshot(BASE)['stocks'] if row['symbol'] == selected)['quote']
+    assert actual['price'] == 100
+    assert actual['status'] == 'LIVE'
+    assert actual['quote_at'] == BASE.isoformat()
+    assert actual['first_seen_at'] == BASE.isoformat()
+
+
+def test_conflicting_duplicate_hot_quote_is_not_arbitrarily_selected(harness):
+    original = harness.client.prices
+    async def conflicting(symbols):
+        rows = await original(symbols)
+        return rows + [{**rows[0], 'lastPrice': '101'}] if rows else rows
+    harness.client.prices = conflicting
+    run(harness.collector.poll_once())
+    items = {row['symbol']: row for row in quotes_snapshot(BASE)['items']}
+    assert SYMBOLS[0] not in items or items[SYMBOLS[0]].get('price') is None
+    assert items[SYMBOLS[1]]['price'] == 100
     assert not harness.client.closed
 
 
