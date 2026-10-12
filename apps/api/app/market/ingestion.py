@@ -94,7 +94,7 @@ def analysis_snapshot() -> AnalysisSnapshot:
     requested_us = {ticker for theme in configured_themes for ticker in theme['usTickers']}
     quality = load_live_bundle(config, required_us_tickers=requested_us)
     allowed = os.environ.get('TOSS_DATA_MODE', 'auto').lower() != 'demo'
-    auth_blocked = safe_json('toss-probe.json').get('authentication', {}).get('condition') in ('ip_not_allowed', 'invalid_client', 'access_denied')
+    auth_blocked = safe_json('toss-probe.json').get('authentication', {}).get('condition') in ('ip_not_allowed', 'invalid_client', 'access_denied', 'authentication_rejected')
     if allowed and quality.ready and not auth_blocked:
         bundle = quality.bundle
         assert bundle is not None
@@ -125,6 +125,7 @@ class IngestionService:
         self.client = client
         self._lock = asyncio.Lock()
         self._task: asyncio.Task | None = None
+        self._fast_collector = None
         self._cache: dict[str, tuple[float, Any]] = {}
         self._blocked = False
         self._last_error: str | None = None
@@ -159,7 +160,7 @@ class IngestionService:
         # exception string ever crosses this boundary.
         safe_samples = {name: {key: item[key] for key in ('status', 'http_status', 'condition', 'schema_status', 'count') if key in item}
                         for name, item in report.get('samples', {}).items() if isinstance(item, dict)}
-        auth_blocked = self._blocked or condition in ('ip_not_allowed', 'invalid_client', 'access_denied')
+        auth_blocked = self._blocked or condition in ('ip_not_allowed', 'invalid_client', 'access_denied', 'authentication_rejected')
         return {'ready': quality.ready and not auth_blocked, 'brokerMode': 'live' if quality.ready and not auth_blocked else 'blocked',
                 'credentials': credentials, 'manifest_present': docs_present,
                 'venue_verified': bool(venue.get('verified')), 'live_orders_enabled': False,
@@ -175,12 +176,36 @@ class IngestionService:
 
     async def start(self):
         report = safe_json('toss-probe.json')
-        self._blocked = report.get('authentication', {}).get('condition') in ('ip_not_allowed', 'invalid_client', 'access_denied')
+        self._blocked = report.get('authentication', {}).get('condition') in ('ip_not_allowed', 'invalid_client', 'access_denied', 'authentication_rejected')
         if os.environ.get('TOSS_DATA_MODE', 'auto').lower() == 'demo':
             return
         credentials_present = bool(os.environ.get('TOSS_CLIENT_ID') and os.environ.get('TOSS_CLIENT_SECRET'))
         if credentials_present and not self._blocked:
             self._task = asyncio.create_task(self._run())
+            await self._start_fast_collector()
+
+    async def _start_fast_collector(self):
+        from app.radar.fast_collector import FastTurnoverCollector
+        if self._fast_collector is None:
+            self._fast_collector = FastTurnoverCollector(self)
+        await self._fast_collector.start()
+
+    def latch_auth_failure(self, error):
+        """Persist only enumerated refusal fields so restarts cannot retry it."""
+        condition = getattr(error, 'condition', None)
+        if condition not in ('ip_not_allowed', 'invalid_client', 'access_denied', 'authentication_rejected'):
+            if getattr(error, 'http_status', None) not in (401, 403):
+                return
+            condition = 'authentication_rejected'
+        self._blocked = True
+        report = safe_json('toss-probe.json')
+        report['authentication'] = {'status': 'failed', 'condition': condition,
+            'http_status': getattr(error, 'http_status', None), 'error_code': getattr(error, 'error_code', None)}
+        report['checked_at'] = datetime.now(timezone.utc).isoformat()
+        path = runtime_dir() / 'toss-probe.json'
+        temporary = path.with_suffix('.tmp')
+        temporary.write_text(json.dumps(report, ensure_ascii=False, allow_nan=False))
+        temporary.replace(path)
 
     async def _run(self, initial_delay=0):
         if initial_delay:
@@ -192,6 +217,8 @@ class IngestionService:
             await asyncio.sleep(30)
 
     async def close(self):
+        if self._fast_collector is not None:
+            await self._fast_collector.close()
         if self._task:
             self._task.cancel()
             try:
@@ -228,12 +255,20 @@ class IngestionService:
                 from app.brokers.toss.documented import run_probe, save_probe
                 previous = safe_json('toss-probe.json')
                 if explicit or not previous.get('venue', {}).get('verified'):
-                    report = await run_probe(self.client)
-                    save_probe(report)
-                    previous = report.to_dict()
+                    # Discovery temporarily changes the shared client's bounded
+                    # request budget. Stop the fast reader while it is in use.
+                    if self._fast_collector is not None:
+                        await self._fast_collector.close()
+                    try:
+                        report = await run_probe(self.client)
+                        save_probe(report)
+                        previous = report.to_dict()
+                    finally:
+                        if self._fast_collector is not None:
+                            await self._fast_collector.start()
                 auth = previous.get('authentication', {})
                 if auth.get('status') not in ('success', 'ready', 'passed'):
-                    self._blocked = auth.get('condition') in ('ip_not_allowed', 'invalid_client', 'access_denied')
+                    self._blocked = auth.get('condition') in ('ip_not_allowed', 'invalid_client', 'access_denied', 'authentication_rejected')
                     return self.status()
                 if not previous.get('venue', {}).get('verified'):
                     self._last_error = '실제 NXT 프리마켓·애프터마켓 샘플 근거가 부족해 모의 모드를 유지합니다.'
@@ -246,10 +281,11 @@ class IngestionService:
                 self._last_error = error.message
             except Exception as error:
                 condition = getattr(error, 'condition', None)
-                self._blocked = condition in ('ip_not_allowed', 'invalid_client', 'access_denied')
+                self._blocked = condition in ('ip_not_allowed', 'invalid_client', 'access_denied', 'authentication_rejected')
                 self._last_error = '실제 시세 조회 또는 정규화 검증에 실패해 모의 모드를 유지합니다.'
             if explicit and not self._blocked and (not self._task or self._task.done()):
                 self._task = asyncio.create_task(self._run(initial_delay=30))
+                await self._start_fast_collector()
             return self.status()
 
     async def ingest(self, venue: dict):
@@ -259,6 +295,10 @@ class IngestionService:
         session, session_label, is_open = session_for(calendar, now)
         ranked_rows = await client.rankings('KR', count=min(100, config.screen.candidate_limit))
         requested = {symbol for theme in themes for symbol in theme['memberSymbols']}
+        # Domestic catalysts are independent of US theme predictions. Newly
+        # linked, observed symbols may enter the analysis universe after open.
+        from app.radar.runtime import current_catalysts
+        requested.update(symbol for event in current_catalysts(now) for symbol in event.get('tickers', []))
         ranked = {row['symbol']: row for row in ranked_rows if row['symbol'] in requested}
         symbols = list(ranked)[:30]
         if len(symbols) < config.theme.min_constituents:
@@ -334,3 +374,5 @@ class IngestionService:
                            'tradingDate': calendar['today']['date'], 'previousBusinessDate': calendar['previousBusinessDay']['date'],
                            'indices': indices, 'usMarkets': [{'symbol': symbol, 'name': symbol, 'changePct': us_returns[symbol], 'source': 'toss'} for symbol in us_symbols[:6]]}}
         save_live_bundle(data, config, required_us_tickers=us_symbols, required_symbols=symbols)
+        from app.radar.runtime import on_verified_bundle
+        on_verified_bundle(data, calendar)

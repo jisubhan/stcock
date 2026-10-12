@@ -25,6 +25,8 @@ export type ChartCandle = {
   close: number;
   volume: number;
   ma5?: number;
+  ma5_5m?: number | null;
+  status?: 'CLOSED' | 'PARTIAL';
 };
 
 export type ChartLevels = {
@@ -174,14 +176,22 @@ export default function PriceChart({ candles, levels, symbol, interval, height =
       crosshairMarkerRadius: 3,
       priceFormat: { type: "price", precision: 0, minMove: 1 },
     });
-    movingAverage.setData(data.flatMap((candle, index) => {
-      // Intraday charts use the integrated daily MA, not a five-minute average.
-      if (interval !== '1d') return [{ time: candle.time, value: levels.ma5 }];
+    movingAverage.setData(data.flatMap<{ time: UTCTimestamp; value?: number }>((candle, index) => {
+      if (interval === '5m') {
+        // Server-provided, completed contiguous 5m observations only. Whitespace
+        // keeps partial/gapped windows from becoming a fabricated recovery line.
+        return [{ time: candle.time, ...(candle.status === 'CLOSED' && typeof candle.ma5_5m === 'number' && Number.isFinite(candle.ma5_5m) ? { value: candle.ma5_5m } : {}) }];
+      }
+      if (interval === '1m') return [{ time: candle.time, value: levels.ma5 }];
       if (index < maPeriod - 1) return [];
       const window = data.slice(Math.max(0, index - maPeriod + 1), index + 1);
       const value = candle.ma5 ?? window.reduce((sum, item) => sum + item.close, 0) / window.length;
       return [{ time: candle.time, value }];
     }));
+    if (interval === '5m' && Number.isFinite(levels.ma5)) {
+      price.createPriceLine({ price: levels.ma5, title: 'MA5_DAILY', color: '#baa8d4',
+        lineStyle: LineStyle.Dotted, lineWidth: 1, axisLabelVisible: false });
+    }
 
     if (showVolume) {
       const volume = chart.addSeries(HistogramSeries, {
@@ -257,8 +267,9 @@ export default function PriceChart({ candles, levels, symbol, interval, height =
   return (
     <div style={{ position: "relative", width: "100%", minWidth: 0 }} role="group" aria-label={`${symbol} ${interval === "1d" ? "일봉" : interval === "5m" ? "5분봉" : "1분봉"} 가격 및 거래량 차트`}>
       <div ref={containerRef} style={{ width: "100%", height }} data-testid="price-chart" />
-      <div style={{ position: "absolute", left: 10, top: 8, pointerEvents: "none", zIndex: 2, display: "flex", alignItems: "center", gap: 12, fontSize: 10, color: "#948b9e" }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 5 }}><i style={{ width: 10, height: 2, background: "#9b78e3" }} />MA{maPeriod}{interval !== '1d' && '(일)'}</span>
+      <div style={{ position: "absolute", left: 10, right: 70, top: 8, pointerEvents: "none", zIndex: 2, display: "flex", flexWrap: "wrap", alignItems: "center", gap: "5px 12px", fontSize: 10, color: "#948b9e" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}><i style={{ width: 10, height: 2, background: "#9b78e3" }} />{interval === '5m' ? `MA5_5M${candles.some(c => c.status === 'CLOSED' && typeof c.ma5_5m === 'number' && Number.isFinite(c.ma5_5m)) ? '' : ' · 이력 대기'}` : `MA${maPeriod}${interval === '1m' ? '_DAILY' : ''}`}</span>
+        {interval === '5m' && <span style={{ display: "flex", alignItems: "center", gap: 5 }}><i style={{ width: 10, height: 1, background: "#baa8d4" }} />MA5_DAILY</span>}
         <span style={{ display: "flex", alignItems: "center", gap: 5 }}><i style={{ width: 7, height: 7, background: "#eee6fb", borderRadius: 2 }} />진입 구간</span>
         {showVolume && <span style={{ display: "flex", alignItems: "center", gap: 5 }}><i style={{ width: 7, height: 7, background: "#f1d5d8", borderRadius: 2 }} />거래량</span>}
       </div>
@@ -270,6 +281,7 @@ export default function PriceChart({ candles, levels, symbol, interval, height =
             <span style={{ color: hover.close >= hover.open ? "#d55662" : "#348294" }}>종 {formatNumber(hover.close)}</span>
           </div>
           {showVolume && <div>거래량 {formatNumber(hover.volume)}</div>}
+          {hover.status === 'PARTIAL' && <div style={{ color: '#a1836d' }}>미완성 봉 · 전략 확인 근거 제외</div>}
         </div>
       )}
       <div style={{ position: "absolute", left: 10, bottom: 29, display: "flex", gap: 4, zIndex: 3 }}>

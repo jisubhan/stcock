@@ -1,4 +1,4 @@
-"""Official Toss Open API 1.2.19: OAuth and market-data reads only.
+"""Verified official Toss Open API: OAuth and market-data reads only.
 
 Paths and response schemas are copied from the current official OpenAPI
 document. Tokens remain in this process; issuing a new token revokes the
@@ -26,6 +26,7 @@ from ...settings import runtime_dir
 from ..base import BrokerUnavailable
 
 OFFICIAL_ORIGIN = "https://openapi.tossinvest.com"
+VERIFIED_DOCUMENT_VERSIONS = frozenset({"1.2.19", "1.2.24"})
 CONTRACT_PATH = Path(__file__).resolve().parents[5] / "config" / "toss-openapi-contract.json"
 FAQ_URL = "https://openapi.tossinvest.com/openapi-docs/faq.md"
 _SYMBOL = re.compile(r"^[A-Za-z0-9.\-]+$")
@@ -187,7 +188,8 @@ class OfficialTossClient:
         self._owns_client = client is None
         try:
             self.contract = json.loads((contract_path or CONTRACT_PATH).read_text(encoding="utf-8"))
-            if self.contract["origin"] != OFFICIAL_ORIGIN or self.contract["document_version"] != "1.2.19":
+            if (self.contract["origin"] != OFFICIAL_ORIGIN
+                    or self.contract["document_version"] not in VERIFIED_DOCUMENT_VERSIONS):
                 raise ValueError()
         except (OSError, ValueError, KeyError, TypeError):
             raise TossAPIError("official_contract_unavailable") from None
@@ -357,10 +359,18 @@ class OfficialTossClient:
         return await self._get("/api/v1/stocks", {"symbols": self._symbols(symbols)})
 
     async def rankings(self, market: str = "KR", count: int = 100) -> list[dict[str, Any]]:
+        result = await self.rankings_snapshot(market, count)
+        return result["rankings"]
+
+    async def rankings_snapshot(self, market: str = "KR", count: int = 100) -> dict[str, Any]:
+        """Return validated rows plus the provider's nullable rankedAt time."""
         result = await self._get("/api/v1/rankings", {"type": "MARKET_TRADING_AMOUNT",
                                 "marketCountry": self._market(market), "duration": "1d",
                                 "count": self._count(count, 100)})
-        return result["rankings"]
+        # Preserve the official as-of time for exact interval-turnover analysis.
+        # A receipt timestamp must never replace nullable rankedAt.
+        self.last_ranking_result = result
+        return result
 
     async def _symbol_records(self, symbol: str, endpoint: str, count: int, until: str | None) -> list[dict[str, Any]]:
         symbol = self._symbols([symbol])
@@ -432,7 +442,7 @@ DocumentedTossClient = OfficialTossClient
 
 @dataclass
 class ProbeReport:
-    document_version: str = "1.2.19"
+    document_version: str = "1.2.24"
     checked_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     authentication: dict[str, Any] = field(default_factory=lambda: {"status": "not_checked"})
     samples: dict[str, Any] = field(default_factory=dict)
@@ -473,7 +483,8 @@ async def run_probe(client: OfficialTossClient) -> ProbeReport:
 
 async def _probe_samples(client: OfficialTossClient) -> ProbeReport:
     starting_calls = client.calls
-    report = ProbeReport(credentials_present=client.credentials_present)
+    report = ProbeReport(document_version=client.contract["document_version"],
+                         credentials_present=client.credentials_present)
     try:
         report.authentication = await client.authenticate()
     except TossAPIError as error:

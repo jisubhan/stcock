@@ -157,6 +157,52 @@ try {
         await noOverflow(page, viewport.width);
         await page.screenshot({ path: join(artifacts, `${viewport.name}-dashboard.png`), fullPage: true });
       });
+      const opening = page.locator('.opening-radar');
+      await check('v1.2 separates three roles and withholds unconnected current rankings', async () => {
+        await expect(opening.locator('.or-loading')).toHaveCount(0);
+        await expect(opening.locator('.or-list')).toHaveCount(3);
+        await expect(opening.locator('.or-rank-flow')).toHaveCount(0);
+        await expect(opening.locator('.or-rank-entry')).toHaveCount(0);
+        await expect(opening.getByText('뉴스 미연결은 시장에 재료가 없다는 뜻이 아닙니다.', { exact: false })).toBeVisible();
+      });
+      await check('v1.2 replay promotes a domestic measured theme and keeps entries separate', async () => {
+        await opening.getByRole('button', { name: 'DEMO 리플레이', exact: false }).click();
+        await expect(opening.locator('.or-rank-hypothesis')).toHaveCount(3);
+        await expect(opening.locator('.or-rank-flow')).toHaveCount(3);
+        await expect(opening.locator('.or-rank-flow h4').first()).toHaveText('국내 정책 재료 · 합성');
+        await expect(opening.locator('.or-rank-entry')).toHaveCount(0);
+        await expect(opening.locator('.or-replay-banner')).toContainText('실제 당일 뉴스·가격·거래대금이 아닙니다.');
+        await opening.locator('.or-rank-flow details').first().locator('summary').click();
+        await expect(opening.locator('.or-rank-flow').first()).toContainText('순매수');
+        await expect(opening.locator('.or-catalyst-meta').first()).toContainText('첫 수신');
+        await expect(opening.locator('.or-transition').first()).toBeVisible();
+        await noOverflow(page, viewport.width);
+        await page.screenshot({ path: join(artifacts, `${viewport.name}-opening-replay.png`), fullPage: true });
+      });
+      await check('v1.2 discovery withholds confirmation before sufficient opening windows', async () => {
+        await opening.getByRole('combobox', { name: '개장 리플레이 기준 시각', exact: true }).selectOption('09:02');
+        await expect(opening.locator('.or-loading')).toHaveCount(0);
+        await expect(opening.locator('.or-rank-flow')).toHaveCount(0);
+        await expect(opening.locator('.or-rank-hypothesis')).toHaveCount(3);
+      });
+      await check('v1.2 reverse rotation changes the measured leader after new observations', async () => {
+        await opening.getByRole('combobox', { name: '개장 리플레이 시나리오', exact: true }).selectOption('reverse_rotation');
+        await opening.getByRole('combobox', { name: '개장 리플레이 기준 시각', exact: true }).selectOption('09:20');
+        await expect(opening.locator('.or-rank-flow h4').first()).toHaveText('미국 선행 광통신 · 합성');
+      });
+      await check('v1.2 feed outage clears measured and entry rankings', async () => {
+        await opening.getByRole('combobox', { name: '개장 리플레이 시나리오', exact: true }).selectOption('data_outage');
+        await expect(opening.locator('.or-loading')).toHaveCount(0);
+        await expect(opening.locator('.or-rank-flow')).toHaveCount(0);
+        await expect(opening.locator('.or-rank-entry')).toHaveCount(0);
+      });
+      await check('v1.2 current view does not retain synthetic leaders from replay', async () => {
+        await opening.getByRole('button', { name: '관측 모니터', exact: true }).click();
+        await expect(opening.locator('.or-loading')).toHaveCount(0);
+        await expect(opening.locator('.or-rank-flow')).toHaveCount(0);
+        await expect(opening.locator('.or-rank-hypothesis')).toHaveCount(0);
+        await expect(opening.locator('.or-replay-banner')).toHaveCount(0);
+      });
       await check('theme selection filters recommendations and reset restores three', async () => {
         const cards = page.locator('.theme-card');
         await expect(cards).toHaveCount(5);

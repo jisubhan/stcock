@@ -126,6 +126,11 @@ async function main() {
   for (const name of ['TOSS_CLIENT_ID', 'TOSS_CLIENT_SECRET', 'TOSS_ACCESS_TOKEN', 'TOSS_API_MANIFEST', 'DATABASE_URL', 'REDIS_URL']) {
     delete webEnvironment[name];
   }
+  for (const name of Object.keys(webEnvironment)) {
+    if (name.startsWith('CATALYST_') || ['DART_API_KEY', 'DART_KEY', 'KIND_API_KEY', 'NEWS_API_KEY'].includes(name)) {
+      delete webEnvironment[name];
+    }
+  }
   launch('Web', process.execPath, [webEntry], standaloneDirectory, webEnvironment);
 }
 

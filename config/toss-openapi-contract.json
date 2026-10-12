@@ -1,7 +1,7 @@
 {
   "document_url": "https://openapi.tossinvest.com/openapi-docs/latest/openapi.json",
-  "document_version": "1.2.19",
-  "source_sha256": "7588debd863ac074e9e408185413ab573c3d45e9221e8cedaeec7c54ee295f03",
+  "document_version": "1.2.24",
+  "source_sha256": "7e753c21dc4b938d8f9610ce3efd6542783018977cb030e39db5a006f5b59d40",
   "origin": "https://openapi.tossinvest.com",
   "responses": {
     "/oauth2/token": {

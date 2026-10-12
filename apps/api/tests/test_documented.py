@@ -281,7 +281,9 @@ def test_bounded_probe_venue_requires_real_session_candles_and_stock_support(nxt
         if path == "/api/v1/stocks":
             return httpx.Response(200, json={"result": [stock(nxt)]})
         return httpx.Response(200, json={"result": {"records": []}})
-    report = run(run_probe(make_client(handler)))
+    client = make_client(handler)
+    report = run(run_probe(client))
+    assert report.document_version == client.contract["document_version"]
     assert report.calls == len(seen) == 12
     assert report.venue["verified"] is expected
     assert bool(report.venue["evidence"]) is expected
@@ -340,7 +342,7 @@ def test_429_probe_retry_is_global_once_with_delay_bounded_to_five(monkeypatch):
 
 def test_saved_contract_provenance_contains_no_request_secrets_or_order_operations():
     contract = json.loads(CONTRACT_PATH.read_text())
-    assert contract["origin"] == OFFICIAL_ORIGIN and contract["document_version"] == "1.2.19"
+    assert contract["origin"] == OFFICIAL_ORIGIN and contract["document_version"] == "1.2.24"
     assert len(contract["source_sha256"]) == 64
     serialized = json.dumps(contract)
     assert "client_secret" not in serialized and "example" not in serialized

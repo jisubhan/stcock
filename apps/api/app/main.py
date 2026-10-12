@@ -14,24 +14,30 @@ from app.strategy.backtest import run_backtest
 from app.db.store import (mark_notifications, monitor_paper, paper_buy, paper_sell,
                           paper_snapshot, read_notifications, save_backtest)
 from app.market.ingestion import IngestionService, analysis_snapshot
+from app.radar.routes import router as radar_router
+from app.radar.runtime import CatalystWorker
 
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     service = IngestionService()
+    catalysts = CatalystWorker()
     application.state.ingestion = service
     await service.start()
+    await catalysts.start()
     try:
         yield
     finally:
+        await catalysts.close()
         await service.close()
 
 
-app = FastAPI(title='FlowTrade Radar', version='0.2.0', lifespan=lifespan,
+app = FastAPI(title='FlowTrade Radar', version='1.2.0', lifespan=lifespan,
               description='Explainable stock radar. Verified complete Toss data or explicit synthetic demo fallback. No order APIs.')
 app.add_middleware(CORSMiddleware,
     allow_origins=os.environ.get('CORS_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(','),
     allow_credentials=False, allow_methods=['GET', 'POST', 'PUT', 'DELETE'], allow_headers=['Content-Type'])
+app.include_router(radar_router)
 
 
 def snapshot():
@@ -68,7 +74,7 @@ async def connection_status():
     readiness = ingestion_service().status()
     return {**context.meta, **readiness, 'mode': context.meta['mode'], 'broker': readiness,
             'requiredVariables': ['TOSS_CLIENT_ID', 'TOSS_CLIENT_SECRET'],
-            'verification': '공식 REST 1.2.19 계약 확인 · 실제 시세와 NXT 샘플 검증은 연결 상태를 확인하세요.',
+            'verification': '공식 REST 1.2.24 계약 확인 · 실제 시세와 NXT 샘플 검증은 연결 상태를 확인하세요.',
             'note': '설정값과 OAuth 토큰은 서버에서만 읽습니다. 실주문 경로는 존재하지 않습니다.'}
 
 
@@ -105,7 +111,7 @@ def market():
         return {**context.market, **context.meta, 'risk': {'level': 'UNKNOWN', 'label': '미평가', 'score': None},
                 'summary': '실제 통합 시세·투자자 수급·미국 전일 수익률을 기준으로 후보를 분석합니다.',
                 'dataStatus': {'prices': 'verified', 'flows': 'shares_with_venue_labels', 'venue': 'sample_verified',
-                               'calendar': 'official', 'officialDocs': 'verified_v1.2.19'},
+                               'calendar': 'official', 'officialDocs': 'verified_v1.2.24'},
                 'note': '국내 가격·캔들은 KRX+NXT 통합 기준입니다. 프로그램 수급은 KRX만 포함합니다.'}
     data = demo_market()
     data.update(context.meta)
@@ -138,7 +144,20 @@ def stock_detail(symbol: str):
     samples, themes, stocks, config = context.samples, context.themes, context.stocks, context.config
     stock = get_stock(symbol, stocks)
     raw = get_stock(symbol, samples)
+    from datetime import datetime, timedelta
+    from app.radar.models import KST
+    from app.radar.sessions import calendar_sessions
+    from app.radar.storage import read_state
+    from app.strategy.intraday import MarketSession, evaluate_legacy_stock_entry
+    entry_clock = datetime.fromisoformat(context.meta['asOf']).astimezone(KST) if context.meta['mode'] == 'demo' else datetime.now(KST)
+    if context.meta['mode'] == 'demo':
+        beginning = entry_clock.replace(hour=8, minute=0, second=0, microsecond=0)
+        sessions = [MarketSession('SYNTHETIC_SESSION', beginning, beginning + timedelta(hours=12))]
+    else:
+        sessions = calendar_sessions(read_state('calendar:' + entry_clock.date().isoformat()) or {})
+    entry = evaluate_legacy_stock_entry(raw, stock, entry_clock, sessions, context.meta['mode'])
     return {**context.meta, **stock,
+            **entry,
             'candles': candles_with_ma(raw['candles'], config.moving_average.short),
             'intraday': raw['intraday'],
             'related': [s for s in stocks if s['themeId'] == stock['themeId'] and s['symbol'] != symbol],
@@ -318,6 +337,12 @@ def notifications():
                       'type': stock['state'], 'title': labels.get(stock['state'], '관찰 후보 업데이트'),
                       'message': f"{stock['name']} · {stock['score']}점 · 진입 {stock['entry']['low']:,}~{stock['entry']['high']:,}원 · 무효화 {stock['risk']['stop']:,}원",
                       'timestamp': context.meta['asOf'], 'read': notification_id in read, 'mode': context.meta['mode']})
+    from app.radar.storage import read_notifications as read_radar_notifications
+    for row in read_radar_notifications(mode=context.meta['mode']):
+        items.append({'id': row['id'], 'symbol': '', 'name': row.get('theme_id', ''),
+            'type': row['notification_type'], 'title': row['notification_type'],
+            'message': row['explanation'], 'timestamp': row['as_of'], 'read': row['read'],
+            'mode': row['mode'], 'source_urls': row.get('source_urls', [])})
     return {**context.meta, 'items': items, 'unread': sum(not item['read'] for item in items)}
 
 

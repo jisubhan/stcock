@@ -1,0 +1,43 @@
+flowtrade_v1_2:
+  feature_flags:
+    domestic_catalyst_radar: true
+    opening_flow_rotation: true
+    replace_premarket_top3_after_open: true
+    require_provenance_for_news: true
+    disable_order_execution: true
+  data:
+    timezone: Asia/Seoul
+    max_live_quote_age_seconds: 15
+    max_news_age_for_new_catalyst_hours: 72
+    min_theme_coverage_ratio: 0.65
+    historical_same_time_sessions: 10
+  refresh:
+    quotes_seconds: 5
+    theme_snapshots_seconds: 60
+    news_poll_seconds: 90
+    top3_seconds: 60
+  scoring:
+    live_theme:
+      turnover_velocity: 0.25
+      relative_turnover: 0.20
+      breadth: 0.20
+      price_momentum: 0.10
+      confirmed_catalyst: 0.15
+      data_quality: 0.10
+    penalty:
+      single_name_only: true
+      low_coverage: true
+      stale_inputs: true
+      extreme_spread: true
+      unverified_catalyst: true
+    min_confirmation_windows: 2
+    promote_hysteresis_points: 8
+    min_leader_dwell_seconds: 180
+  entry:
+    require_completed_5m_bar_for_confirmed_recovery: true
+    min_reward_risk: 2.0
+    max_stop_distance_pct: 2.0
+    no_chasing_if_to_first_resistance_rr_below: 1.0
+  notification:
+    theme_cooldown_seconds: 600
+    require_material_rank_change: true
