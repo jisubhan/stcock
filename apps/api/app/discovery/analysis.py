@@ -361,7 +361,10 @@ def analyze_discovery_stock(*, symbol: str, name: str, as_of: datetime | str,
                    _time(actual_quote['first_seen_at']), 'CONSOLIDATED', 'toss',
                    'LIVE' if actual_quote['status'] == 'LIVE' else 'STALE')
                    if actual_quote and actual_quote['quote_at'] else None)
-    early = evaluate_early_entry(EarlyEntryInput(clock, point_quote, bars, levels, EntryGates(**gates), symbol))
+    # Previous official sessions are visible in the chart at night/pre-open,
+    # but cannot provide today's recovery/entry proof.
+    current_bars = [bar for bar in bars if bar.start.date() == clock.date()]
+    early = evaluate_early_entry(EarlyEntryInput(clock, point_quote, current_bars, levels, EntryGates(**gates), symbol))
     # Fixed maxima: missing factors do not inflate the remaining weights.
     factors = {}
     theme_score = _number((theme or {}).get('hypothesis_score', (theme or {}).get('score')))

@@ -100,6 +100,28 @@ def test_selected_symbol_queues_real_candles_and_never_uses_demo_chart(client, f
     assert client.get('/api/discovery/stocks?page=0').status_code == 422
 
 
+def test_prior_official_session_builds_chart_but_never_current_entry(client, frozen):
+    observed_calendar = calendar()
+    previous = datetime(2026, 10, 9, tzinfo=KST)
+    observed_calendar['previousBusinessDay']['integrated'] = {'afterMarket': {
+        'startTime': previous.replace(hour=15, minute=40).isoformat(),
+        'endTime': previous.replace(hour=20).isoformat()}}
+    storage.save_calendar('KR', observed_calendar, CLOCK)
+    minute = [{'time': previous.replace(hour=19, minute=56).isoformat(),
+        'open': 10000, 'high': 10100, 'low': 9900, 'close': 10050, 'volume': 1234,
+        'source': 'toss', 'venue': 'CONSOLIDATED', 'integrated': True}]
+    minute = [{**minute[0], 'time': (previous.replace(hour=19, minute=56) + timedelta(minutes=index)).isoformat()}
+              for index in range(5)]
+    storage.save_analysis_inputs('0101N0', [], minute, SEEN, SEEN)
+    detail = client.get('/api/discovery/stocks/0101N0').json()
+    bars = detail['chart']['five_minute']
+    assert len(bars) == 1 and bars[0]['status'] == 'CLOSED'
+    assert bars[0]['end'] == previous.replace(hour=20).isoformat()
+    assert bars[0]['volume'] == 5 * 1234
+    assert detail['earlyEntry']['confirmation_bar'] is None
+    assert detail['earlyEntry']['eligible'] is False
+
+
 @pytest.mark.parametrize('malformed', [
     {'currency': 'USD'}, {'tradingAmount': '-100'}, {'source': 'synthetic'},
     {'mode': 'demo'}, {'first_seen_at': (CLOCK + timedelta(seconds=1)).isoformat()},

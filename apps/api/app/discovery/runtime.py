@@ -122,7 +122,7 @@ def _analyze(snapshot, stock, now, theme_id=None):
     return analyze_discovery_stock(symbol=stock['symbol'], name=stock.get('name') or stock['symbol'], as_of=now,
         quote=stock.get('quote'), daily_candles=inputs.get('daily', []), minute_candles=inputs.get('minute', []),
         daily_first_seen_at=inputs.get('daily_first_seen_at'), minute_first_seen_at=inputs.get('minute_first_seen_at'),
-        sessions=calendar_sessions(calendar), previous_business_day=calendar.get('previousBusinessDay', {}).get('date'),
+        sessions=calendar_sessions(calendar, include_previous=True), previous_business_day=calendar.get('previousBusinessDay', {}).get('date'),
         theme_context=_theme_context(snapshot, stock, theme_id, now),
         flow_observations=snapshot.get('flow_observations', {}).get(stock['symbol'], []),
         config=read_strategy(), investor_netbuy=None, entry_gates=None)

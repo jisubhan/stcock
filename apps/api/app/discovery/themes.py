@@ -208,7 +208,7 @@ def build_theme_hypotheses(snapshot: Mapping[str, Any], as_of: datetime | str) -
                'WATCH_PRIORITY_IS_NOT_RETURN_PROBABILITY', 'TRADING_AMOUNT_IS_NOT_INVESTOR_NET_BUYING']
     calendar = (snapshot.get('calendar') or {}).get('KR') or {}
     try:
-        sessions = calendar_sessions(calendar)
+        sessions = calendar_sessions(calendar, include_previous=True)
     except (ValueError, TypeError, KeyError):
         sessions = []
     previous_day = calendar.get('previousBusinessDay', {}).get('date')
@@ -329,7 +329,8 @@ def build_theme_hypotheses(snapshot: Mapping[str, Any], as_of: datetime | str) -
             theme_reasons.append('PARTIAL_MEMBER_COVERAGE')
         theme = {'id': 'sector:' + sector_id, 'sector_id': sector_id, 'name': sector['name'],
                  'depth': sector.get('depth'), 'parent_sector_id': sector.get('parentSectorId'),
-                 'state': 'PREMARKET_HYPOTHESIS' if not sessions or clock < min(s.start for s in sessions) else 'WATCH',
+                 'state': 'PREMARKET_HYPOTHESIS' if not any(s.start.date() == clock.date() for s in sessions)
+                     or clock < min(s.start for s in sessions if s.start.date() == clock.date()) else 'WATCH',
                  'quality': 'ANALYSIS_ONLY' if score is not None else 'UNAVAILABLE', 'score': score,
                  'score_definition': DEFINITION, 'factor_coverage': available / 100, 'available_max_points': available,
                  'factors': factors, 'evidence': evidence, 'members': members, 'recommended_stocks': [],

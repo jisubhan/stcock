@@ -15,10 +15,12 @@ def parsed_time(value):
     return stamp.astimezone(KST)
 
 
-def calendar_sessions(calendar):
-    integrated = calendar.get('today', {}).get('integrated') or {}
+def calendar_sessions(calendar, *, include_previous=False):
+    days = [calendar.get('today', {})]
+    if include_previous:
+        days.insert(0, calendar.get('previousBusinessDay', {}))
     return [MarketSession(LABELS[key], parsed_time(times['startTime']), parsed_time(times['endTime']), 'CONSOLIDATED')
-            for key, times in integrated.items() if key in LABELS and times]
+            for day in days for key, times in (day.get('integrated') or {}).items() if key in LABELS and times]
 
 
 def current_session(calendar, as_of):

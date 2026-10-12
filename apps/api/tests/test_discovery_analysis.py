@@ -84,6 +84,18 @@ def test_quote_backed_unregistered_stock_preserves_unknown_flow_and_blocks_ready
     assert result["orders_enabled"] is False
     assert result["earlyEntry"]["eligible"] is False
     assert result["earlyEntry"]["state"] != "EARLY_ENTRY_READY"
+
+
+def test_previous_day_chart_bars_do_not_supply_recovery_to_fresh_quote():
+    previous = AS_OF.replace(day=9, hour=9, minute=0, second=0)
+    old_minutes = [minute(previous + timedelta(minutes=index + 1)) for index in range(30)]
+    result = analyze(minute_candles=old_minutes,
+        sessions=[MarketSession('OFFLINE_PREVIOUS', previous, previous.replace(hour=15, minute=30)), *calendar()])
+    assert len(result['chart']['five_minute']) == 6
+    assert result['chart']['five_minute'][-1]['end'] == previous.replace(minute=30).isoformat()
+    assert result['earlyEntry']['confirmation_bar'] is None
+    assert result['earlyEntry'].get('completed_5m_bar') is False
+    assert result['earlyEntry']['eligible'] is False
     assert result["technical"]["ma5"] is not None
     assert result["technical"]["ma20"] is not None
     assert all(value is None for value in result["earlyEntry"].get("gates", {}).values())
