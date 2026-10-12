@@ -133,6 +133,47 @@ def test_provider_failure_stops_current_ranking_even_with_recent_cached_data(mon
     assert result['data_freshness']['quotes']['status'] == 'UNAVAILABLE'
 
 
+def test_quote_only_read_never_mints_token_or_fills_missing_prices(client, monkeypatch):
+    from app.brokers.toss.documented import OfficialTossClient
+    async def forbidden_auth(*args, **kwargs):
+        pytest.fail('Reading cached quotes must never trigger OAuth.')
+    monkeypatch.setattr(OfficialTossClient, 'authenticate', forbidden_auth)
+    for _ in range(2):
+        response = client.get('/api/market/quotes')
+        assert response.status_code == 200
+        data = response.json()
+        assert data['source'] == 'toss'
+        assert data['status'] == 'UNAVAILABLE'
+        assert data['items'] == []
+        assert 'measurement_definition' in data
+    assert client.get('/api/connection').json()['mode'] == 'demo'
+
+
+def test_quote_only_route_can_show_price_before_a_full_analysis_bundle(client, monkeypatch):
+    from app.radar.quotes import save_quotes
+    from app.settings import runtime_dir
+    now = datetime.now(KST)
+    monkeypatch.setenv('TOSS_DATA_MODE', 'auto')
+    # Constructed provider proof/calendar; this is an offline integration case.
+    (runtime_dir() / 'toss-probe.json').write_text(json.dumps({
+        'authentication': {'status': 'passed'}, 'venue': {'verified': True}}))
+    calendar = {'today': {'date': now.date().isoformat(), 'integrated': {'preMarket': {
+        'startTime': (now - timedelta(minutes=1)).isoformat(),
+        'endTime': (now + timedelta(minutes=1)).isoformat()}}}}
+    storage.save_state('calendar:' + now.date().isoformat(), calendar, now - timedelta(seconds=1))
+    save_quotes([{'symbol': '005930', 'currency': 'KRW', 'lastPrice': '123450',
+                  'timestamp': now.isoformat()}], now, ['005930'])
+    data = client.get('/api/market/quotes').json()
+    assert data['status'] == 'LIVE'
+    assert data['session_id'] == 'NXT_PRE_MARKET'
+    assert data['items'][0]['price'] == 123450
+    assert data['items'][0]['quote_at'] == now.isoformat()
+    assert data['items'][0]['change_pct'] is None
+    # No fabricated investor flow, analysis snapshot, entry or daily chart.
+    assert client.get('/api/connection').json()['mode'] == 'demo'
+    assert client.get('/api/recommendations?view=entry-ready').json()['items'] == []
+
+
 def test_additive_migration_and_down_preserve_existing_paper_data():
     with storage.connection() as conn:
         conn.execute("INSERT INTO notification_read VALUES ('legacy-user-read', '2026-10-12')")
@@ -141,12 +182,16 @@ def test_additive_migration_and_down_preserve_existing_paper_data():
     backup = path.with_name('before-down.sqlite3')
     with sqlite3.connect(path) as conn, sqlite3.connect(backup) as archive:
         conn.backup(archive)
+        conn.executescript((storage.SQL_PATH.parent / '002_quote_monitor_down.sql').read_text())
         conn.executescript((storage.SQL_PATH.parent / '001_radar_v12_down.sql').read_text())
         assert conn.execute('SELECT id FROM notification_read').fetchone()[0] == 'legacy-user-read'
         assert conn.execute('SELECT COUNT(*) FROM backtest_runs').fetchone()[0] == 1
         assert not conn.execute("SELECT 1 FROM sqlite_master WHERE name='minute_symbol_metrics'").fetchone()
+        assert not conn.execute("SELECT 1 FROM sqlite_master WHERE name='quote_observations'").fetchone()
     with sqlite3.connect(backup) as archive:
         assert archive.execute("SELECT 1 FROM sqlite_master WHERE name='minute_symbol_metrics'").fetchone()
+        assert archive.execute("SELECT 1 FROM sqlite_master WHERE name='quote_observations'").fetchone()
     with storage.connection() as conn:
         assert conn.execute("SELECT version FROM schema_migrations WHERE version='radar_v12_001'").fetchone()
+        assert conn.execute("SELECT version FROM schema_migrations WHERE version='quote_monitor_002'").fetchone()
         assert conn.execute('SELECT COUNT(*) FROM backtest_runs').fetchone()[0] == 1

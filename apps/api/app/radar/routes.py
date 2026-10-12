@@ -27,6 +27,13 @@ def overview(as_of: datetime | None = None):
     return current_overview(clock(as_of), persist=as_of is None)
 
 
+@router.get('/market/quotes')
+def market_quotes():
+    """Read verified prices independently of a complete recommendation bundle."""
+    from app.radar.quotes import quotes_snapshot
+    return quotes_snapshot()
+
+
 @router.get('/catalysts')
 def catalysts(since: datetime | None = None, verified: bool | None = None, as_of: datetime | None = None):
     now = clock(as_of) or datetime.now(KST)

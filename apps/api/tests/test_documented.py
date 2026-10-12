@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import parse_qs
 
@@ -322,6 +323,50 @@ def test_probe_restores_persistent_client_budget_and_preserves_valid_token():
         assert client.max_http_calls is None and client._probe_retries is None
         assert client.calls == 24
     run(probes_and_read())
+
+
+@pytest.mark.parametrize('local_clock,expected_day', [
+    ('2026-10-13T07:59:00+09:00', '2026-10-12'),
+    ('2026-10-13T08:00:02+09:00', '2026-10-12'),
+    ('2026-10-13T09:01:00+09:00', '2026-10-13'),
+])
+def test_cold_start_verifies_last_completed_nxt_premarket_without_waiting_for_new_candles(monkeypatch, local_clock, expected_day):
+    clock = datetime.fromisoformat(local_clock)
+    class FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return clock.astimezone(tz) if tz is not None else clock.replace(tzinfo=None)
+    monkeypatch.setattr('app.brokers.toss.documented.datetime', FrozenDateTime)
+    verified_calendar = json.loads(json.dumps(calendar()).replace('2026-10-07', '2026-10-13')
+                                   .replace('2026-10-06', '2026-10-12').replace('2026-10-08', '2026-10-14'))
+    bounded_before = []
+    def handler(request):
+        path = request.url.path
+        if path == '/oauth2/token':
+            return httpx.Response(200, json=TOKEN)
+        if path == '/api/v1/prices':
+            return httpx.Response(200, json={'result': [PRICE]})
+        if path == '/api/v1/candles':
+            before = request.url.params.get('before')
+            if before:
+                bounded_before.append(before)
+                day = before[:10]
+                at = day + ('T19:00:00+09:00' if '20:00' in before else 'T08:20:00+09:00')
+            else:
+                at = '2026-10-12T19:00:00+09:00'
+            return httpx.Response(200, json={'result': {'candles': [candle(at)]}})
+        if path == '/api/v1/rankings':
+            return httpx.Response(200, json={'result': {'rankings': []}})
+        if path == '/api/v1/market-calendar/KR':
+            return httpx.Response(200, json={'result': verified_calendar})
+        if path == '/api/v1/stocks':
+            return httpx.Response(200, json={'result': [stock()]})
+        return httpx.Response(200, json={'result': {'records': []}})
+    report = run(run_probe(make_client(handler)))
+    assert report.authentication['status'] == 'passed'
+    assert report.venue['verified'] is True
+    assert bounded_before == [expected_day + 'T09:00:00+09:00', '2026-10-12T20:00:00+09:00']
+    assert report.calls == 12
 
 
 def test_429_probe_retry_is_global_once_with_delay_bounded_to_five(monkeypatch):

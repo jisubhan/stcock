@@ -164,7 +164,58 @@ try {
         await expect(opening.locator('.or-rank-flow')).toHaveCount(0);
         await expect(opening.locator('.or-rank-entry')).toHaveCount(0);
         await expect(opening.getByText('뉴스 미연결은 시장에 재료가 없다는 뜻이 아닙니다.', { exact: false })).toBeVisible();
+        await expect(opening.getByTestId('live-quotes')).toBeVisible();
+        await expect(opening.getByTestId('live-quote-row')).toHaveCount(0);
       });
+      // These responses are browser fixtures, not observed market prices.
+      // The actual isolated analysis API remains explicitly DEMO throughout.
+      let quoteFixture = 'live';
+      const quotePattern = '**/api/market/quotes';
+      const quoteHandler = async route => {
+        if (quoteFixture === 'error') {
+          await route.abort('failed');
+          return;
+        }
+        const received = new Date().toISOString();
+        const observed = new Date(Date.now() - (quoteFixture === 'stale' ? 30_000 : 0)).toISOString();
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({
+          as_of: received, source: 'toss', provider: 'MOCK · Toss-compatible browser fixture',
+          status: 'LIVE', session_id: 'NXT_PRE_MARKET', session_label: 'NXT 장전 · 합성 테스트',
+          is_open: true, poll_interval_seconds: 5, reason: 'Synthetic UI input; not actual market data.',
+          measurement_definition: 'Synthetic browser test of independent price display.',
+          items: [{ symbol: '005930', name: '독립 시세 테스트 · 합성', price: 123450, change_pct: null,
+            quote_at: observed, first_seen_at: received, status: 'LIVE', latency_seconds: 0 }],
+        }) });
+      };
+      await context.route(quotePattern, quoteHandler);
+      await check('fresh quote display is independent of unavailable flow rankings and demo analysis', async () => {
+        await page.reload({ waitUntil: 'domcontentloaded' });
+        await dashboardReady();
+        const row = opening.getByTestId('live-quote-row');
+        await expect(row).toHaveCount(1);
+        await expect(row).toHaveAttribute('data-status', 'LIVE');
+        await expect(row).toContainText('123,450');
+        await expect(opening.getByTestId('live-quotes')).toContainText('MOCK');
+        await expect(opening.locator('.or-rank-flow')).toHaveCount(0);
+        await expect(opening.locator('.or-rank-entry')).toHaveCount(0);
+        await expect(page.locator('.sidebar-bottom')).toContainText('샘플 데이터');
+        await noOverflow(page, viewport.width);
+        await page.screenshot({ path: join(artifacts, `${viewport.name}-independent-quotes-fixture.png`), fullPage: true });
+      });
+      await check('old provider timestamps are stale even when a fresh response claims live', async () => {
+        quoteFixture = 'stale';
+        await expect(opening.getByTestId('live-quote-row')).toHaveAttribute('data-status', 'STALE');
+      });
+      await check('failed quote refresh withholds live status and keeps only the last observed price', async () => {
+        quoteFixture = 'error';
+        await expect(opening.getByTestId('live-quotes')).toHaveAttribute('data-status', 'STALE');
+        await expect(opening.getByTestId('live-quote-row')).toHaveAttribute('data-status', 'STALE');
+        await expect(opening.getByTestId('live-quote-row')).toContainText('123,450');
+      });
+      await context.unroute(quotePattern, quoteHandler);
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await dashboardReady();
+      await expect(opening.getByTestId('live-quote-row')).toHaveCount(0);
       await check('v1.2 replay promotes a domestic measured theme and keeps entries separate', async () => {
         await opening.getByRole('button', { name: 'DEMO 리플레이', exact: false }).click();
         await expect(opening.locator('.or-rank-hypothesis')).toHaveCount(3);
@@ -172,6 +223,7 @@ try {
         await expect(opening.locator('.or-rank-flow h4').first()).toHaveText('국내 정책 재료 · 합성');
         await expect(opening.locator('.or-rank-entry')).toHaveCount(0);
         await expect(opening.locator('.or-replay-banner')).toContainText('실제 당일 뉴스·가격·거래대금이 아닙니다.');
+        await expect(opening.getByTestId('live-quotes')).toHaveCount(0);
         await opening.locator('.or-rank-flow details').first().locator('summary').click();
         await expect(opening.locator('.or-rank-flow').first()).toContainText('순매수');
         await expect(opening.locator('.or-catalyst-meta').first()).toContainText('첫 수신');

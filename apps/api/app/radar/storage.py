@@ -8,6 +8,7 @@ from pathlib import Path
 from app.db.store import connection as legacy_connection
 
 SQL_PATH = Path(__file__).resolve().parents[1] / 'db' / 'migrations' / '001_radar_v12.sql'
+QUOTE_SQL_PATH = SQL_PATH.with_name('002_quote_monitor.sql')
 
 
 def identity(*parts) -> str:
@@ -24,12 +25,15 @@ def encoded(value) -> str:
 def connection():
     with legacy_connection() as conn:
         conn.executescript(SQL_PATH.read_text())
+        conn.executescript(QUOTE_SQL_PATH.read_text())
         # Catalyst tables are maintained by their source boundary. Import lazily
         # so source adapters can themselves use this connection safely.
         from app.catalysts.store import CATALYST_SCHEMA_SQL
         conn.executescript(CATALYST_SCHEMA_SQL)
         conn.execute('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)',
                      ('radar_v12_001', datetime.now(timezone.utc).isoformat()))
+        conn.execute('INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)',
+                     ('quote_monitor_002', datetime.now(timezone.utc).isoformat()))
         yield conn
 
 

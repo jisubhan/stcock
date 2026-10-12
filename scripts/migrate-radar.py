@@ -20,7 +20,8 @@ def main():
         from app.radar.storage import connection
         with connection() as conn:
             assert conn.execute("SELECT 1 FROM schema_migrations WHERE version='radar_v12_001'").fetchone()
-        print('radar_v12_001 additive migration applied; legacy tables retained.')
+            assert conn.execute("SELECT 1 FROM schema_migrations WHERE version='quote_monitor_002'").fetchone()
+        print('radar_v12_001 and quote_monitor_002 additive migrations applied; legacy tables retained.')
         return
     if not database.exists():
         parser.error('The database does not exist; there is nothing to roll back.')
@@ -29,6 +30,7 @@ def main():
     name = 'radar-before-v12-rollback-' + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ') + '.sqlite3'
     with sqlite3.connect(database) as source, sqlite3.connect(directory / name) as destination:
         source.backup(destination)
+        source.executescript((ROOT / 'apps/api/app/db/migrations/002_quote_monitor_down.sql').read_text())
         source.executescript((ROOT / 'apps/api/app/db/migrations/001_radar_v12_down.sql').read_text())
     print('v1.2 tables rolled back; legacy data retained. Backup created in API_DATA_DIR/backups/.')
 

@@ -15,6 +15,7 @@ from app.brokers.toss.documented import TossAPIError
 from app.radar.fast_collector import FastTurnoverCollector
 from app.radar.models import KST
 from app.radar.storage import read_observations
+from app.radar.quotes import quotes_snapshot
 from app.settings import runtime_dir
 
 
@@ -66,9 +67,9 @@ class MockClient:
 
     async def calendar(self, market):
         self.calls.append(("calendar", market))
-        return {"today": {"date": BASE.date().isoformat(), "integrated": {"regularMarket": {
-            "startTime": BASE.replace(hour=9, minute=0).isoformat(),
-            "endTime": BASE.replace(hour=15, minute=30).isoformat(),
+        return {"today": {"date": self.clock.now.date().isoformat(), "integrated": {"regularMarket": {
+            "startTime": self.clock.now.replace(hour=9, minute=0, second=0, microsecond=0).isoformat(),
+            "endTime": self.clock.now.replace(hour=15, minute=30, second=0, microsecond=0).isoformat(),
         }}}}
 
     async def rankings_snapshot(self, market, count):
@@ -129,7 +130,11 @@ def harness(monkeypatch):
     monkeypatch.setattr(module, "read_themes", lambda: [{"memberSymbols": SYMBOLS}])
     monkeypatch.setattr(runtime, "current_catalysts", lambda **kwargs: [])
     monkeypatch.setattr(runtime, "current_overview", lambda **kwargs: overview_calls.append(kwargs))
-    monkeypatch.setattr(runtime, "on_verified_calendar", lambda calendar, as_of: calendar_calls.append((calendar, as_of)), raising=False)
+    calendar_hook = runtime.on_verified_calendar
+    def verified_calendar(calendar, as_of):
+        calendar_calls.append((calendar, as_of))
+        calendar_hook(calendar, as_of)
+    monkeypatch.setattr(runtime, "on_verified_calendar", verified_calendar)
     collector = FastTurnoverCollector(owner, config=deepcopy(CONFIG), clock=lambda: clock.now)
     return SimpleNamespace(module=module, runtime=runtime, clock=clock, client=client,
                            owner=owner, collector=collector, overview_calls=overview_calls,
@@ -183,16 +188,18 @@ def test_missing_ranking_timestamp_never_substitutes_receipt_time(harness):
     health = run(harness.collector.poll_once())
     assert health["status"] == "UNAVAILABLE"
     assert health["last_success_at"] is None
-    assert not any(call[0] == "prices" for call in harness.client.calls)
+    assert any(call[0] == "prices" for call in harness.client.calls)
+    assert quotes_snapshot(BASE)['status'] == 'LIVE'
     assert read_observations(BASE, "KRX_REGULAR") == []
 
 
 @pytest.mark.parametrize("provider_age,expected_status", [(16, "STALE"), (-1, "UNAVAILABLE")])
-def test_stale_or_future_ranking_provider_time_prevents_quote_fetch(harness, provider_age, expected_status):
+def test_stale_or_future_ranking_provider_time_does_not_block_actual_quotes(harness, provider_age, expected_status):
     harness.client.rank_age_seconds = provider_age
     health = run(harness.collector.poll_once())
     assert health["status"] == expected_status
-    assert not any(call[0] == "prices" for call in harness.client.calls)
+    assert any(call[0] == "prices" for call in harness.client.calls)
+    assert quotes_snapshot(BASE)['status'] == 'LIVE'
     assert harness.overview_calls == []
 
 
@@ -204,16 +211,18 @@ def test_provider_and_quote_fifteen_second_boundary_is_accepted(harness):
     assert health["coverage"]["fresh_quotes_seen"] == 3
 
 
-def test_provider_calendar_with_no_matching_active_session_prevents_quotes(harness):
-    harness.owner.cache["calendar_kr"] = {"today": {"integrated": {"regularMarket": {
+def test_closed_session_keeps_actual_quotes_stale_without_turnover(harness):
+    harness.owner.cache["calendar_kr"] = {"today": {"date": BASE.date().isoformat(), "integrated": {"regularMarket": {
         "startTime": BASE.replace(hour=10).isoformat(), "endTime": BASE.replace(hour=15).isoformat(),
     }}}}
     health = run(harness.collector.poll_once())
     assert health["status"] == "UNAVAILABLE"
-    assert not any(call[0] == "prices" for call in harness.client.calls)
+    assert any(call[0] == "prices" for call in harness.client.calls)
+    assert quotes_snapshot(BASE)['status'] == 'STALE'
 
 
 def test_ranking_freshness_is_rechecked_after_slow_price_batch(harness):
+    harness.client.rows.append({'symbol': '000004', 'tradingAmount': '1000', 'price': {'lastPrice': '100'}})
     harness.client.price_hook = lambda: harness.clock.advance(16)
     health = run(harness.collector.poll_once())
     assert health["status"] == "STALE"
@@ -254,7 +263,7 @@ def test_watch_universe_and_quote_batches_stay_bounded(harness, monkeypatch):
     assert ("rankings_snapshot", "KR", 100) in harness.client.calls
     assert len(requested) == len(set(requested)) == 200
     assert all(len(batch) <= 100 for batch in batches)
-    assert requested[:100] == ranked_symbols
+    assert requested[:100] == registered[:100]
     assert health["coverage"]["quotes_requested"] == 200
     assert "not the entire market" in health["coverage"]["scope"]
 
@@ -289,7 +298,7 @@ def test_explicit_demo_start_and_poll_perform_no_http(harness, monkeypatch):
 
 
 @pytest.mark.parametrize("guard", ["missing_proof", "auth_failed", "venue_unverified", "owner_blocked",
-                                    "verification_in_progress", "missing_client", "missing_typed_rankings", "feature_disabled"])
+                                    "verification_in_progress", "missing_client", "feature_disabled"])
 def test_verification_and_owner_guards_never_make_http(harness, guard):
     if guard == "missing_proof":
         (runtime_dir() / "toss-probe.json").unlink()
@@ -303,14 +312,70 @@ def test_verification_and_owner_guards_never_make_http(harness, guard):
         harness.owner._verification_in_progress = True
     elif guard == "missing_client":
         harness.owner.client = None
-    elif guard == "missing_typed_rankings":
-        harness.client.rankings_snapshot = None
     else:
         harness.collector.config["feature_flags"]["opening_flow_rotation"] = False
     health = run(harness.collector.poll_once())
     assert health["status"] == "UNAVAILABLE"
     assert harness.client.calls == []
     assert harness.overview_calls == []
+
+
+def test_missing_ranking_method_does_not_block_independent_actual_prices(harness):
+    harness.client.rankings_snapshot = None
+    result = run(harness.collector.poll_once())
+    assert result['status'] == 'UNAVAILABLE'
+    assert quotes_snapshot(BASE)['status'] == 'LIVE'
+
+
+def test_rank_error_and_its_backoff_do_not_block_quote_monitor(harness):
+    harness.client.error = TossAPIError('rate_limit', 429)
+    assert run(harness.collector.poll_once())['status'] == 'DELAYED'
+    assert quotes_snapshot(BASE)['status'] == 'LIVE'
+    original_rank_calls = sum(call[0] == 'rankings_snapshot' for call in harness.client.calls)
+    harness.clock.advance(5)
+    run(harness.collector.poll_once())
+    assert sum(call[0] == 'rankings_snapshot' for call in harness.client.calls) == original_rank_calls
+    assert quotes_snapshot(harness.clock.now)['status'] == 'LIVE'
+
+
+def test_first_nxt_counter_at_eight_is_partial_but_actual_price_is_live(harness):
+    harness.clock.now = BASE.replace(hour=8, minute=0)
+    async def nxt_calendar(market):
+        return {'today': {'date': harness.clock.now.date().isoformat(), 'integrated': {'preMarket': {
+            'startTime': harness.clock.now.replace(hour=8, minute=0).isoformat(),
+            'endTime': harness.clock.now.replace(hour=8, minute=50).isoformat()}}}}
+    harness.client.calendar = nxt_calendar
+    flow = run(harness.collector.poll_once())
+    quote = quotes_snapshot(harness.clock.now)
+    assert flow['status'] == 'PARTIAL' and flow['coverage']['symbols_seen'] == 0
+    assert quote['status'] == 'LIVE' and quote['session_id'] == 'NXT_PRE_MARKET'
+    assert all(item['price'] == 100 for item in quote['items'])
+
+
+def test_calendar_new_kst_day_refreshes_independently_of_stale_ranking(harness):
+    old = run(harness.client.calendar('KR'))
+    harness.owner.cache['calendar_kr'] = old
+    harness.clock.now = BASE + timedelta(days=1)
+    harness.client.rank_age_seconds = 30
+    result = run(harness.collector.poll_once())
+    assert result['status'] == 'STALE'
+    quote = quotes_snapshot(harness.clock.now)
+    assert quote['status'] == 'LIVE'
+    assert harness.calendar_calls[-1][0]['today']['date'] == harness.clock.now.date().isoformat()
+
+
+def test_quote_network_failure_invalidates_cached_live_status_immediately(harness):
+    run(harness.collector.poll_once())
+    assert quotes_snapshot(BASE)['status'] == 'LIVE'
+    async def failed_prices(symbols):
+        raise RuntimeError('DO_NOT_EXPOSE_PROVIDER_ERROR')
+    harness.client.prices = failed_prices
+    harness.clock.advance(5)
+    run(harness.collector.poll_once())
+    snapshot = quotes_snapshot(harness.clock.now)
+    assert snapshot['status'] == 'STALE'
+    assert all(item['price'] == 100 and item['status'] == 'STALE' for item in snapshot['items'])
+    assert 'DO_NOT_EXPOSE_PROVIDER_ERROR' not in json.dumps(snapshot)
 
 
 def test_start_is_idempotent_and_close_keeps_shared_client_owned_by_ingestion(harness):

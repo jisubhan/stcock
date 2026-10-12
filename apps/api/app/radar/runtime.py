@@ -184,7 +184,19 @@ def feed_health(as_of=None, *, historical=False):
             'ip_not_allowed', 'invalid_client', 'access_denied', 'authentication_rejected')
         if blocked or os.environ.get('TOSS_DATA_MODE', 'auto').lower() == 'demo':
             quote = _feed('UNAVAILABLE', 'Toss REST', '실제 수집이 비활성화됐거나 인증 거부가 기록돼 있습니다.')
-    return {'quotes': quote, 'news': grouped(('NEWS', 'PRESS'), '한국 뉴스·정책 발표'),
+    from app.radar.quotes import quotes_snapshot
+    prices = quotes_snapshot(now)
+    visible_prices = prices.get('items', [])
+    prices_health = _feed(prices['status'], prices['provider'], prices['reason'],
+        last_success_at=max((item['quote_at'] for item in visible_prices if item.get('quote_at')), default=None),
+        latency_seconds=min((item['latency_seconds'] for item in visible_prices
+                             if isinstance(item.get('latency_seconds'), (int, float))), default=None),
+        coverage={'symbols_seen': sum(item.get('status') == 'LIVE' for item in visible_prices),
+                  'symbols_observed': len(visible_prices), 'scope': 'Queried symbols; not the entire market'})
+    if historical:
+        prices_health['status'] = 'STALE' if visible_prices else 'UNAVAILABLE'
+        prices_health['reason'] = '과거 시점의 실제 가격 조회이며 현재 시세로 사용할 수 없습니다.'
+    return {'prices': prices_health, 'quotes': quote, 'news': grouped(('NEWS', 'PRESS'), '한국 뉴스·정책 발표'),
             'disclosures': grouped(('DART', 'KIND'), 'DART/KIND 공시'),
             'investor_netbuy': _feed('UNAVAILABLE', 'Toss 투자자·프로그램 수급',
                 '검증된 일별 순매수와 거래대금을 분리합니다. v1.2 장중 시각·지연이 확인되지 않아 사용하지 않습니다.'),

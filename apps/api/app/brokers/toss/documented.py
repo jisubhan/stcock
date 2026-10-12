@@ -514,7 +514,12 @@ async def _probe_samples(client: OfficialTossClient) -> ProbeReport:
     if calendar:
         def session(day: dict[str, Any], name: str) -> dict[str, Any] | None:
             return (day.get("integrated") or {}).get(name)
-        pre_day = calendar["today"] if session(calendar["today"], "preMarket") else calendar["previousBusinessDay"]
+        today_pre = session(calendar["today"], "preMarket")
+        # A restart before/opening the premarket cannot prove venue support
+        # using candles from a session that has not finished yet. Validate the
+        # most recent completed official session, keeping all real-volume gates.
+        pre_day = calendar["today"] if (today_pre and
+            datetime.fromisoformat(today_pre["endTime"].replace("Z", "+00:00")) <= datetime.now(timezone.utc)) else calendar["previousBusinessDay"]
         after_day = calendar["previousBusinessDay"]
         pre_session = session(pre_day, "preMarket")
         after_session = session(after_day, "afterMarket")
